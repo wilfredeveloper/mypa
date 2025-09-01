@@ -1,0 +1,22 @@
+# TAO Chatbot Requirements
+# Core PocketFlow framework
+pocketflow
+
+# BAML dependencies (should already be installed in main project)
+# baml-py
+# baml-client
+
+# Rate limiting
+aiolimiter>=1.1.0
+
+# Retry logic
+tenacity>=8.2.0
+
+# YAML parsing
+PyYAML>=6.0
+
+# Async support
+asyncio
+
+# Logging
+logging

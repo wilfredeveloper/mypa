@@ -1,0 +1,16 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "aiolimiter>=1.2.1",
+    "baml-py>=0.206.1",
+    "pocketflow>=0.0.3",
+    "pydantic>=2.11.7",
+    "python-dotenv>=1.1.1",
+    "pyyaml>=6.0.2",
+    "tenacity>=9.1.2",
+    "typing-extensions>=4.15.0",
+]
