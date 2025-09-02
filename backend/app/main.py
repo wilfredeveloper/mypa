@@ -6,6 +6,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env.local and .env files
+# This ensures BAML can access the API keys from environment variables
+load_dotenv(".env.local")
+load_dotenv(".env")
 
 from app.api.v1.api import api_router
 from app.core.config import settings
@@ -46,6 +54,11 @@ def create_application() -> FastAPI:
     
     # Include API router
     app.include_router(api_router, prefix=settings.API_V1_STR)
+
+    # Mount static files
+    static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+    if os.path.exists(static_dir):
+        app.mount("/static", StaticFiles(directory=static_dir), name="static")
     
     # Add startup and shutdown event handlers
     @app.on_event("startup")

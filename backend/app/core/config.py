@@ -93,10 +93,12 @@ class Settings(BaseSettings):
     
     # External APIs
     OPENAI_API_KEY: Optional[str] = None
-    
+    GEMINI_API_KEY: Optional[str] = None
+
     class Config:
-        env_file = ".env"
+        env_file = [".env.local", ".env"]
         case_sensitive = True
+        extra = "allow"
 
 
 @lru_cache()

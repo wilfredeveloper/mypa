@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot API Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .test-section {
+            margin-bottom: 40px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #fafafa;
+        }
+
+        .test-section h2 {
+            color: #2c3e50;
+            margin-top: 0;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+
+        input[type="text"], textarea, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+
+        textarea {
+            height: 100px;
+            resize: vertical;
+        }
+
+        button {
+            background-color: #3498db;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        button:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        .response-area {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: white;
+            min-height: 100px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        .streaming-area {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #27ae60;
+            border-radius: 4px;
+            background-color: #f8fff8;
+            min-height: 200px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .conversation-history {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background-color: white;
+            border-radius: 4px;
+        }
+
+        .message {
+            margin-bottom: 10px;
+            padding: 8px;
+            border-radius: 4px;
+        }
+
+        .message.user {
+            background-color: #e3f2fd;
+            text-align: right;
+        }
+
+        .message.assistant {
+            background-color: #f1f8e9;
+        }
+
+        .message-role {
+            font-weight: bold;
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
+
+        .clear-btn {
+            background-color: #e74c3c;
+        }
+
+        .clear-btn:hover {
+            background-color: #c0392b;
+        }
+        /* Simple inline form for auth */
+        .form-inline { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .form-inline input { width: auto; min-width: 220px; }
+        .badge { display: inline-block; padding: 6px 10px; border-radius: 999px; font-size: 12px; }
+        .badge.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .badge.warn { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .badge.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .chat-input { display: flex; gap: 10px; align-items: flex-end; }
+        .chat-input textarea { flex: 1; height: 70px; }
+        .chat-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        /* Chat bubbles */
+        .msg-row { display: flex; gap: 10px; margin: 10px 0; align-items: flex-end; }
+        .msg-row.user { flex-direction: row-reverse; }
+        .avatar { width: 32px; height: 32px; border-radius: 50%; background: #3498db; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px; }
+        .avatar.assistant { background: #2ecc71; }
+        .bubble { max-width: 75%; padding: 10px 12px; border-radius: 14px; line-height: 1.4; position: relative; }
+        .bubble.user { background: #e3f2fd; border-bottom-right-radius: 4px; }
+        .bubble.assistant { background: #f1f8e9; border-bottom-left-radius: 4px; }
+        .meta { font-size: 11px; color: #6b7280; margin-top: 4px; }
+
+        /* Typing indicator */
+        .typing { display: none; align-items: center; gap: 8px; color: #6b7280; font-size: 13px; margin-top: 8px; }
+        .typing.show { display: flex; }
+        .dots span { display: inline-block; width: 6px; height: 6px; margin: 0 2px; background: #9ca3af; border-radius: 50%; animation: blink 1.4s infinite both; }
+        .dots span:nth-child(2) { animation-delay: .2s }
+        .dots span:nth-child(3) { animation-delay: .4s }
+        @keyframes blink { 0%, 80%, 100% { opacity: .2 } 40% { opacity: 1 } }
+
+        /* Connection badge */
+        .badge.neutral { background: #eef2ff; color: #3730a3; border: 1px solid #c7d2fe; }
+        .badge.streaming { background: #ecfeff; color: #155e75; border: 1px solid #a5f3fc; }
+
+        /* Toggle */
+        .toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+          body { padding: 10px; }
+          .container { padding: 16px; }
+          .chat-input { flex-direction: column; align-items: stretch; }
+          .bubble { max-width: 85%; }
+        }
+
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>💬 Chatbot API Test Interface</h1>
+
+        <!-- Health Check Section -->
+        <div class="test-section">
+            <h2>🩺 Health Check</h2>
+            <button onclick="checkHealth()">Check Service Health</button>
+            <div id="health-response" class="response-area"></div>
+        </div>
+
+        <!-- Chat Section with Auth -->
+        <div class="test-section">
+            <div class="chat-header">
+                <h2>💬 Chat</h2>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <label class="toggle">
+                        <input type="checkbox" id="streamToggle" /> Streaming
+                    </label>
+                    <div id="conn-status" class="badge neutral">Idle</div>
+                    <div id="auth-status" class="badge warn">Not logged in</div>
+                </div>
+            </div>
+            <div class="form-inline" id="login-form">
+                <input type="email" id="email" placeholder="Email" />
+                <input type="password" id="password" placeholder="Password" />
+                <button onclick="login()" type="button">Login</button>
+                <button onclick="openRegister()" type="button" style="background:#10b981">Register</button>
+                <button onclick="logout()" class="clear-btn" type="button">Logout</button>
+            </div>
+
+            <!-- Registration Modal -->
+            <div id="register-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:50;">
+              <div style="background:#fff; max-width:420px; margin:10% auto; padding:20px; border-radius:8px;">
+                <h3 style="margin-top:0;">Create account</h3>
+                <div class="form-group"><label>Email</label><input type="text" id="reg-email" /></div>
+                <div class="form-group"><label>Full name (optional)</label><input type="text" id="reg-fullname" /></div>
+                <div class="form-group"><label>Password</label><input type="password" id="reg-password" /></div>
+                <div class="form-group"><label>Confirm Password</label><input type="password" id="reg-confirm" /></div>
+                <div id="reg-error" class="status error" style="display:none;"></div>
+                <div style="display:flex; gap:10px; justify-content:flex-end;">
+                  <button onclick="submitRegister()" type="button" style="background:#10b981">Sign Up</button>
+                  <button onclick="closeRegister()" type="button" class="clear-btn">Cancel</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="chat-messages" class="conversation-history" style="margin-top:15px;"></div>
+            <div id="typing" class="typing"><span>Bot is typing</span><span class="dots"><span></span><span></span><span></span></span></div>
+            <div class="chat-input" style="margin-top:10px;">
+                <textarea id="message" placeholder="Type your message. Press Enter to send, Shift+Enter for newline"></textarea>
+                <div style="display:flex; flex-direction:column; gap:6px; align-items:flex-end;">
+                  <div id="char-count" style="font-size:12px; color:#6b7280;">0 chars</div>
+                  <div>
+                    <button onclick="sendMessage()" type="button">Send</button>
+                    <button onclick="confirmClear()" class="clear-btn" type="button">Clear</button>
+                  </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api/v1/chatbot';
+        const AUTH_BASE = '/api/v1/auth';
+        let conversationHistory = [];
+        let accessToken = localStorage.getItem('accessToken');
+        let refreshToken = localStorage.getItem('refreshToken');
+
+        function setAuthStatus() {
+            const badge = document.getElementById('auth-status');
+            if (accessToken) {
+                badge.textContent = 'Authenticated';
+                badge.className = 'badge success';
+            } else {
+                badge.textContent = 'Not logged in';
+                badge.className = 'badge warn';
+            }
+        }
+
+        function setTokens(a, r) {
+            accessToken = a || null;
+            refreshToken = r || null;
+            if (accessToken) localStorage.setItem('accessToken', accessToken); else localStorage.removeItem('accessToken');
+            if (refreshToken) localStorage.setItem('refreshToken', refreshToken); else localStorage.removeItem('refreshToken');
+            setAuthStatus();
+        }
+
+        function authHeader() {
+            return accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {};
+        }
+
+        async function login() {
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+            if (!email || !password) {
+                alert('Enter email and password');
+                return;
+            }
+            const body = new URLSearchParams({ username: email, password: password });
+            try {
+                const res = await fetch(`${AUTH_BASE}/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(data?.detail || 'Login failed');
+                }
+                setTokens(data.access_token, data.refresh_token);
+            } catch (e) {
+                setTokens(null, null);
+                alert(`Login error: ${e.message}`);
+            }
+        }
+
+        function logout() {
+            setTokens(null, null);
+        }
+
+        async function tryRefresh() {
+            if (!refreshToken) return false;
+            try {
+                const res = await fetch(`${AUTH_BASE}/refresh`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: refreshToken })
+                });
+                const data = await res.json();
+                if (!res.ok) return false;
+                setTokens(data.access_token, data.refresh_token);
+                return true;
+            } catch { return false; }
+        }
+
+        // Health Check Function
+        async function checkHealth() {
+            const responseDiv = document.getElementById('health-response');
+            responseDiv.innerHTML = 'Checking health...';
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                responseDiv.innerHTML = `Status: ${response.status}\n\n${JSON.stringify(data, null, 2)}`;
+                responseDiv.className = response.ok ? 'response-area status success' : 'response-area status error';
+            } catch (error) {
+                responseDiv.innerHTML = `Error: ${error.message}`;
+                responseDiv.className = 'response-area status error';
+            }
+        }
+
+        function formatTime(d = new Date()) {
+            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function initialsFor(role) {
+            return role === 'user' ? 'U' : 'A';
+        }
+
+        function appendMessage(role, content, timestamp = new Date()) {
+            const list = document.getElementById('chat-messages');
+            const row = document.createElement('div');
+            row.className = `msg-row ${role}`;
+
+            const avatar = document.createElement('div');
+            avatar.className = `avatar ${role}`;
+            avatar.textContent = initialsFor(role);
+
+            const bubbleWrap = document.createElement('div');
+            const bubble = document.createElement('div');
+            bubble.className = `bubble ${role}`;
+            bubble.textContent = content;
+            const meta = document.createElement('div');
+            meta.className = 'meta';
+            meta.textContent = formatTime(timestamp);
+
+            bubbleWrap.appendChild(bubble);
+            bubbleWrap.appendChild(meta);
+
+            row.appendChild(avatar);
+            row.appendChild(bubbleWrap);
+
+            list.appendChild(row);
+            list.scrollTop = list.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const textarea = document.getElementById('message');
+            const msg = textarea.value;
+            const streaming = document.getElementById('streamToggle').checked;
+            if (!msg.trim()) return;
+            if (!accessToken) { alert('Please log in first'); return; }
+
+            appendMessage('user', msg);
+            textarea.value = '';
+
+            const requestBody = {
+                message: msg,
+                conversation_history: conversationHistory,
+                stream: streaming
+            };
+
+            const typing = document.getElementById('typing');
+            const conn = document.getElementById('conn-status');
+            typing.classList.add('show');
+            conn.textContent = streaming ? 'Connecting…' : 'Requesting…';
+            conn.className = streaming ? 'badge streaming' : 'badge neutral';
+
+            if (streaming) {
+                await sendStreaming(requestBody, conn, typing);
+            } else {
+                await sendNonStreaming(requestBody, conn, typing);
+            }
+        }
+
+        async function sendNonStreaming(requestBody, conn, typing) {
+            let response, data;
+            try {
+                response = await fetch(`${API_BASE}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...authHeader() },
+                    body: JSON.stringify(requestBody)
+                });
+                if (response.status === 401 && await tryRefresh()) {
+                    response = await fetch(`${API_BASE}/chat`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', ...authHeader() },
+                        body: JSON.stringify(requestBody)
+                    });
+                }
+                data = await response.json();
+            } catch (error) {
+                appendMessage('assistant', `Network Error: ${error.message}`);
+                conn.textContent = 'Error';
+                typing.classList.remove('show');
+                return;
+            }
+
+            typing.classList.remove('show');
+            if (response.ok) {
+                conversationHistory.push({ role: 'user', content: requestBody.message });
+                conversationHistory.push({ role: 'assistant', content: data.response });
+                appendMessage('assistant', data.response || '[no response]');
+                conn.textContent = 'Idle';
+                conn.className = 'badge neutral';
+            } else {
+                appendMessage('assistant', `Error ${response.status}: ${JSON.stringify(data)}`);
+                conn.textContent = 'Error';
+                conn.className = 'badge error';
+                if (response.status === 401) setAuthStatus();
+            }
+        }
+
+        async function sendStreaming(requestBody, conn, typing) {
+            console.log('Starting streaming request...');
+            // Build URL and headers for SSE
+            const url = `${API_BASE}/chat/stream`;
+            const headers = { 'Content-Type': 'application/json', ...authHeader() };
+            console.log('URL:', url, 'Headers:', headers);
+
+            // We will use fetch with ReadableStream parser for SSE since EventSource doesn't allow custom headers
+            let resp;
+            try {
+                resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify(requestBody) });
+                if (resp.status === 401 && await tryRefresh()) {
+                    resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader() }, body: JSON.stringify(requestBody) });
+                }
+            } catch (e) {
+                appendMessage('assistant', `Connection error: ${e.message}`);
+                conn.textContent = 'Error';
+                conn.className = 'badge error';
+                typing.classList.remove('show');
+                return;
+            }
+
+            if (!resp.ok || !resp.body) {
+                appendMessage('assistant', `Stream error: HTTP ${resp.status}`);
+                conn.textContent = 'Error';
+                conn.className = 'badge error';
+                typing.classList.remove('show');
+                return;
+            }
+
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let buffer = '';
+            let finalContent = '';
+
+            conn.textContent = 'Streaming…';
+            conn.className = 'badge streaming';
+            console.log('Starting to read stream...');
+
+            try {
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) {
+                        console.log('Stream reading completed');
+                        break;
+                    }
+                    const chunk = decoder.decode(value, { stream: true });
+                    buffer += chunk;
+                    console.log('Received chunk:', chunk);
+                    console.log('Current buffer:', buffer);
+
+                    let idx;
+                    console.log('Looking for \\n\\n in buffer, found at index:', buffer.indexOf('\n\n'));
+                    while ((idx = buffer.indexOf('\n\n')) !== -1) {
+                        console.log('Found event separator at index:', idx);
+                        const rawEvent = buffer.slice(0, idx);
+                        buffer = buffer.slice(idx + 2);
+                        console.log('Processing raw event:', rawEvent);
+
+                        const lines = rawEvent.split('\n');
+                        let eventType = 'message';
+                        let dataLine = '';
+                        for (const line of lines) {
+                            if (line.startsWith('event:')) eventType = line.slice(6).trim();
+                            if (line.startsWith('data:')) dataLine += line.slice(5).trim();
+                        }
+                        console.log('Parsed event type:', eventType, 'data:', dataLine);
+                        if (!dataLine) continue;
+                        try {
+                            const payload = JSON.parse(dataLine);
+                            console.log('SSE Event:', eventType, payload);
+
+                            if (eventType === 'stream_chunk') {
+                                // Only accumulate final_answer content for display
+                                if (payload.type === 'final_answer') {
+                                    console.log('Final answer chunk:', payload.content);
+                                    finalContent += payload.content || '';
+                                    showOrUpdateAssistantDraft(finalContent);
+                                }
+                                // Log other chunk types for debugging
+                                else if (payload.type === 'thought') {
+                                    console.log('Thought:', payload.content);
+                                } else if (payload.type === 'observation') {
+                                    console.log('Observation:', payload.content);
+                                }
+                            } else if (eventType === 'stream_start') {
+                                console.log('Stream started');
+                            } else if (eventType === 'stream_complete') {
+                                console.log('Stream complete:', payload.content);
+                                finalContent = payload.content || finalContent;
+                            } else if (eventType === 'stream_error') {
+                                appendMessage('assistant', payload.content || 'Stream error');
+                            }
+                        } catch (e) {
+                            console.error('SSE parse error:', e, 'Data:', dataLine);
+                        }
+                    }
+                }
+            } catch (e) {
+                appendMessage('assistant', `Stream read error: ${e.message}`);
+            }
+
+            typing.classList.remove('show');
+            console.log('Stream finished. Final content:', finalContent);
+            if (finalContent) {
+                conversationHistory.push({ role: 'user', content: requestBody.message });
+                conversationHistory.push({ role: 'assistant', content: finalContent });
+                finalizeAssistantDraft(finalContent);
+                conn.textContent = 'Idle';
+                conn.className = 'badge neutral';
+                console.log('Successfully processed streaming response');
+            } else {
+                console.error('No final content received from stream');
+                conn.textContent = 'Error';
+                conn.className = 'badge error';
+            }
+        }
+
+        // Live drafting helpers for streaming
+        let draftEl = null;
+        function showOrUpdateAssistantDraft(text) {
+            const list = document.getElementById('chat-messages');
+            if (!draftEl) {
+                // create a draft bubble
+                const row = document.createElement('div');
+                row.className = 'msg-row assistant';
+                const avatar = document.createElement('div');
+                avatar.className = 'avatar assistant';
+                avatar.textContent = 'A';
+                const wrap = document.createElement('div');
+                draftEl = document.createElement('div');
+                draftEl.className = 'bubble assistant';
+                draftEl.textContent = text;
+                const meta = document.createElement('div');
+                meta.className = 'meta';
+                meta.textContent = formatTime(new Date());
+                wrap.appendChild(draftEl);
+                wrap.appendChild(meta);
+                row.appendChild(avatar);
+                row.appendChild(wrap);
+                list.appendChild(row);
+            } else {
+                draftEl.textContent = text;
+            }
+            list.scrollTop = list.scrollHeight;
+        }
+        function finalizeAssistantDraft(text) {
+            if (!draftEl) return;
+            draftEl = null; // Leave the existing bubble as the final message
+        }
+
+        // Registration modal helpers
+        function openRegister() {
+            document.getElementById('register-modal').style.display = 'block';
+            document.getElementById('reg-error').style.display = 'none';
+            document.getElementById('reg-error').textContent = '';
+        }
+        function closeRegister() {
+            document.getElementById('register-modal').style.display = 'none';
+        }
+        async function submitRegister() {
+            const email = document.getElementById('reg-email').value.trim();
+            const fullName = document.getElementById('reg-fullname').value.trim();
+            const pass = document.getElementById('reg-password').value;
+            const confirm = document.getElementById('reg-confirm').value;
+            const err = document.getElementById('reg-error');
+
+            // basic validations
+            if (!/^\S+@\S+\.\S+$/.test(email)) { err.textContent = 'Enter a valid email'; err.style.display = 'block'; return; }
+            if (pass.length < 8) { err.textContent = 'Password must be at least 8 characters'; err.style.display = 'block'; return; }
+            if (!/[A-Z]/.test(pass) || !/[a-z]/.test(pass) || !/[0-9]/.test(pass)) { err.textContent = 'Password must include upper, lower, and number'; err.style.display = 'block'; return; }
+            if (pass !== confirm) { err.textContent = 'Passwords do not match'; err.style.display = 'block'; return; }
+
+            try {
+                const res = await fetch(`${AUTH_BASE}/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password: pass, full_name: fullName || undefined })
+                });
+                const data = await res.json();
+                if (!res.ok) { throw new Error(data?.detail || 'Registration failed'); }
+                // Auto-login after successful registration
+                document.getElementById('email').value = email;
+                document.getElementById('password').value = pass;
+                await login();
+                closeRegister();
+            } catch (e) {
+                err.textContent = e.message;
+                err.style.display = 'block';
+            }
+        }
+
+        // Clear with confirmation and input helpers
+        function confirmClear() {
+            if (confirm('Clear the conversation?')) clearResponse();
+        }
+        (function setupInputHelpers(){
+            const textarea = document.getElementById('message');
+            const counter = document.getElementById('char-count');
+            textarea.addEventListener('input', () => {
+                const len = textarea.value.length;
+                counter.textContent = `${len} chars`;
+            });
+        })();
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            setAuthStatus();
+            checkHealth();
+            const textarea = document.getElementById('message');
+            textarea.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+        });
+
+        // Clear Conversation
+        function clearResponse() {
+            conversationHistory = [];
+            const list = document.getElementById('chat-messages');
+            list.innerHTML = '';
+        }
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            setAuthStatus();
+            checkHealth();
+            const textarea = document.getElementById('message');
+            textarea.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+        });
+    </script>
+</body>
+</html>

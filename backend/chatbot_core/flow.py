@@ -31,9 +31,10 @@ def create_tao_chatbot_flow():
     
     # After ActionNode completes, go to ObserveNode
     action - "observe" >> observe
-    
-    # After ObserveNode completes, return to ThinkNode
+
+    # After ObserveNode completes, either return to ThinkNode or end
     observe - "think" >> think
+    observe - "end" >> end
     
     # Create and return async flow, starting from ThinkNode
     return AsyncFlow(start=think)
