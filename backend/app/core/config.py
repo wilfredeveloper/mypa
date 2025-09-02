@@ -94,6 +94,7 @@ class Settings(BaseSettings):
     # External APIs
     OPENAI_API_KEY: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
+    TAVILY_API_KEY: Optional[str] = None
 
     class Config:
         env_file = [".env.local", ".env"]

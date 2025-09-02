@@ -7,6 +7,7 @@ from typing import Optional
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 
 from app.core.database import Base
 
@@ -44,6 +45,11 @@ class User(Base):
         nullable=False
     )
     last_login = Column(DateTime(timezone=True), nullable=True)
-    
+
+    # Relationships for Personal Assistant
+    agent_configs = relationship("AgentConfig", back_populates="user", cascade="all, delete-orphan")
+    tool_access = relationship("UserToolAccess", back_populates="user", cascade="all, delete-orphan")
+    oauth_tokens = relationship("OAuthToken", back_populates="user", cascade="all, delete-orphan")
+
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email='{self.email}')>"

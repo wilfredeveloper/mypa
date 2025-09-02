@@ -24,6 +24,7 @@ dependencies = [
     "email-validator>=2.0.0", # For EmailStr validation
     # HTTP client and utilities
     "httpx>=0.25.2",
+    "aiohttp>=3.9.0",
     "python-dotenv>=1.1.1",
     "pyyaml>=6.0.2",
     # Existing dependencies
@@ -38,6 +39,7 @@ dependencies = [
     # CORS and middleware (CORS is built into FastAPI)
     # "python-cors>=1.7.0",  # Not needed - FastAPI has built-in CORS
     "aiosqlite>=0.21.0",
+    "cryptography>=45.0.7",
 ]
 
 [project.optional-dependencies]
