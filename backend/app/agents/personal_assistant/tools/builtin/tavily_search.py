@@ -126,7 +126,7 @@ class TavilySearchTool(BaseTool):
             "max_results": max_results,
             "include_answer": True,
             "include_images": False,
-            "include_raw_content": False
+            "include_raw_content": "markdown"
         }
 
         # Add domain filters if provided
