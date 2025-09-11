@@ -80,6 +80,7 @@ def create_application() -> FastAPI:
             from app.core.database import Base, sync_engine, AsyncSessionLocal
             from sqlalchemy import select
             from app.models.tool import ToolRegistry, ToolType
+            from app.agents.personal_assistant.tools.schemas import GOOGLE_CALENDAR_SCHEMA
 
             if db_url.startswith("sqlite"):
                 logger.info("Auto-creating SQLite tables if not present")
@@ -100,45 +101,7 @@ def create_application() -> FastAPI:
                             ),
                             tool_type=ToolType.EXTERNAL,
                             category="productivity",
-                            schema_data={
-                                "type": "object",
-                                "properties": {
-                                    "action": {
-                                        "type": "string",
-                                        "enum": ["list", "create", "update", "delete", "availability"]
-                                    },
-                                    "calendar_id": {"type": "string", "description": "Calendar ID (default 'primary')"},
-                                    "time_range": {
-                                        "type": "object",
-                                        "properties": {
-                                            "start": {"type": "string", "description": "RFC3339/ISO datetime (UTC or with offset)"},
-                                            "end": {"type": "string", "description": "RFC3339/ISO datetime (UTC or with offset)"},
-                                            "max_results": {"type": "integer", "default": 10}
-                                        }
-                                    },
-                                    "event_data": {
-                                        "type": "object",
-                                        "properties": {
-                                            "summary": {"type": "string"},
-                                            "description": {"type": "string"},
-                                            "location": {"type": "string"},
-                                            "start": {"type": "string", "description": "RFC3339/ISO datetime or {dateTime,timeZone}"},
-                                            "end": {"type": "string", "description": "RFC3339/ISO datetime or {dateTime,timeZone}"},
-                                            "attendees": {"type": "array", "items": {"type": "string", "description": "email"}},
-                                            "reminders": {"type": "array", "items": {
-                                                "type": "object",
-                                                "properties": {
-                                                    "method": {"type": "string", "enum": ["email", "popup"]},
-                                                    "minutes": {"type": "integer"}
-                                                }
-                                            }}
-                                        },
-                                        "required": ["summary", "start", "end"]
-                                    },
-                                    "event_id": {"type": "string", "description": "Event ID for update/delete"}
-                                },
-                                "required": ["action"]
-                            },
+                            schema_data=GOOGLE_CALENDAR_SCHEMA,
                             permissions_required=["https://www.googleapis.com/auth/calendar"],
                             oauth_provider="google",
                             is_enabled=True,
@@ -155,42 +118,7 @@ def create_application() -> FastAPI:
                         )
                         tool.tool_type = ToolType.EXTERNAL
                         tool.category = "productivity"
-                        tool.schema_data = {
-                            "type": "object",
-                            "properties": {
-                                "action": {"type": "string", "enum": ["list", "create", "update", "delete", "availability"]},
-                                "calendar_id": {"type": "string", "description": "Calendar ID (default 'primary')"},
-                                "time_range": {
-                                    "type": "object",
-                                    "properties": {
-                                        "start": {"type": "string", "description": "RFC3339/ISO datetime (UTC or with offset)"},
-                                        "end": {"type": "string", "description": "RFC3339/ISO datetime (UTC or with offset)"},
-                                        "max_results": {"type": "integer", "default": 10}
-                                    }
-                                },
-                                "event_data": {
-                                    "type": "object",
-                                    "properties": {
-                                        "summary": {"type": "string"},
-                                        "description": {"type": "string"},
-                                        "location": {"type": "string"},
-                                        "start": {"type": "string", "description": "RFC3339/ISO datetime or {dateTime,timeZone}"},
-                                        "end": {"type": "string", "description": "RFC3339/ISO datetime or {dateTime,timeZone}"},
-                                        "attendees": {"type": "array", "items": {"type": "string", "description": "email"}},
-                                        "reminders": {"type": "array", "items": {
-                                            "type": "object",
-                                            "properties": {
-                                                "method": {"type": "string", "enum": ["email", "popup"]},
-                                                "minutes": {"type": "integer"}
-                                            }
-                                        }}
-                                    },
-                                    "required": ["summary", "start", "end"]
-                                },
-                                "event_id": {"type": "string", "description": "Event ID for update/delete"}
-                            },
-                            "required": ["action"]
-                        }
+                        tool.schema_data = GOOGLE_CALENDAR_SCHEMA
                         tool.oauth_provider = "google"
                         tool.is_enabled = True
                         await session.commit()

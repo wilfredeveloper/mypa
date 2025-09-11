@@ -29,7 +29,7 @@ dependencies = [
     "pyyaml>=6.0.2",
     # Existing dependencies
     "aiolimiter>=1.2.1",
-    "baml-py>=0.206.1",
+    "baml-py==0.207.0",
     "pocketflow>=0.0.3",
     "tenacity>=9.1.2",
     "typing-extensions>=4.15.0",

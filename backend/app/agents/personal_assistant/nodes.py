@@ -13,6 +13,7 @@ import re
 
 from pocketflow import AsyncNode
 from utils.baml_utils import RateLimitedBAMLGeminiLLM
+from app.services.parameter_processor import ParameterProcessor, ParameterProcessingError
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,10 @@ logger = logging.getLogger(__name__)
 
 class PAThinkNode(AsyncNode):
     """Node that analyzes user requests and decides on actions."""
+
+    def __init__(self):
+        super().__init__()
+        self.parameter_processor = ParameterProcessor()
 
     async def prep_async(self, shared):
         """Prepare thinking data."""
@@ -161,78 +166,70 @@ class PAThinkNode(AsyncNode):
         if "thoughts" not in shared:
             shared["thoughts"] = []
         shared["thoughts"].append(exec_res)
-        # Normalize tool parameters from BAML (fix stringified objects early)
+
+        # Process tools_to_use with centralized parameter processor
         try:
             tools = exec_res.get("tools_to_use") or []
-            normalized_tools: List[Dict[str, Any]] = []
+            processed_tools: List[Dict[str, Any]] = []
+            tool_registry = prep_res.get("tool_registry")
 
-            def _looks_like_obj(s: Any) -> bool:
-                return isinstance(s, str) and s.strip().startswith(("{", "[")) and s.strip().endswith(("}", "]"))
-
-            def _lenient_parse(s: str):
-                t = s.strip()
-                # Fast path
+            for tool_call in tools:
+                tool_name = "unknown"  # Initialize with default value
                 try:
-                    return json.loads(t)
-                except Exception:
-                    pass
-                try:
-                    cleaned = t.replace("'", '"')
-                    # Quote unquoted keys
-                    cleaned = re.sub(r'([\{\[,]\s*)([A-Za-z_][A-Za-z0-9_\-]*)\s*:', r'\1"\2":', cleaned)
-                    # Quote ISO datetime-like values if unquoted
-                    cleaned = re.sub(r':\s*([0-9]{4}-[0-9]{2}-[0-9]{2}T[^",}\]]+)', r': "\1"', cleaned)
-                    # Quote array tokens that look like bare words/emails
-                    def _quote_array_tokens(m):
-                        inner = m.group(1)
-                        parts = [p.strip() for p in inner.split(',') if p.strip() != '']
-                        def qt(p: str) -> str:
-                            if not p:
-                                return p
-                            if p.startswith(('"', '{', '[', '-')) or (p and p[0].isdigit()):
-                                return p
-                            return f'"{p}"'
-                        return '[' + ', '.join(qt(p) for p in parts) + ']'
-                    cleaned = re.sub(r'\[([^\]\[]*)\]', lambda m: _quote_array_tokens(m), cleaned)
-                    # Remove trailing commas
-                    cleaned = re.sub(r',\s*([}\]])', r'\1', cleaned)
-                    return json.loads(cleaned)
-                except Exception:
-                    return None
+                    # Extract tool name and parameters
+                    if hasattr(tool_call, 'name'):
+                        tool_name = tool_call.name
+                        raw_params = getattr(tool_call, 'parameters', {}) or {}
+                    elif isinstance(tool_call, dict):
+                        tool_name = tool_call.get('name') or tool_call.get('tool')
+                        raw_params = tool_call.get('parameters', {})
+                    else:
+                        logger.warning(f"Invalid tool call format: {tool_call}")
+                        continue
 
-            for tc in tools:
-                if hasattr(tc, 'name'):
-                    name = tc.name
-                    params = getattr(tc, 'parameters', {}) or {}
-                elif isinstance(tc, dict):
-                    name = tc.get('name') or tc.get('tool')
-                    params = tc.get('parameters', {})
-                else:
+                    if not tool_name or tool_name == "unknown":
+                        logger.warning("Tool call missing name")
+                        continue
+
+                    # Get tool schema for validation
+                    tool_schema = None
+                    if tool_registry:
+                        tool_schema = tool_registry.get_tool_schema(tool_name)
+
+                    if not tool_schema:
+                        logger.warning(f"No schema found for tool: {tool_name}")
+                        # Still process without schema validation
+                        processed_tools.append({
+                            'name': tool_name,
+                            'parameters': raw_params if isinstance(raw_params, dict) else {}
+                        })
+                        continue
+
+                    # Process parameters using centralized processor
+                    processed_params = await self.parameter_processor.process_baml_parameters(
+                        raw_params, tool_schema, tool_name
+                    )
+
+                    processed_tools.append({
+                        'name': tool_name,
+                        'parameters': processed_params
+                    })
+
+                    logger.debug(f"Successfully processed parameters for {tool_name}")
+
+                except ParameterProcessingError as e:
+                    logger.error(f"Parameter processing failed for tool {tool_name}: {e}")
+                    # Add error information for user feedback
+                    processed_tools.append({
+                        'name': tool_name,
+                        'parameters': {},
+                        'error': str(e)
+                    })
+                except Exception as e:
+                    logger.error(f"Unexpected error processing tool {tool_name}: {e}")
                     continue
 
-                if isinstance(params, str) and _looks_like_obj(params):
-                    parsed = _lenient_parse(params)
-                    if isinstance(parsed, dict):
-                        params = parsed
-
-                if name == 'google_calendar' and isinstance(params, dict):
-                    ed = params.get('event_data')
-                    if isinstance(ed, str) and _looks_like_obj(ed):
-                        ped = _lenient_parse(ed)
-                        if isinstance(ped, dict):
-                            params['event_data'] = ped
-                    tr = params.get('time_range')
-                    if isinstance(tr, str) and _looks_like_obj(tr):
-                        ptr = _lenient_parse(tr)
-                        if isinstance(ptr, dict):
-                            params['time_range'] = ptr
-
-                normalized_tools.append({
-                    'name': name,
-                    'parameters': params
-                })
-
-            exec_res['tools_to_use'] = normalized_tools
+            exec_res['tools_to_use'] = processed_tools
         except Exception as _e:
             logger.warning(f"Failed to normalize BAML tools_to_use: {_e}")
 
@@ -301,26 +298,11 @@ class PAToolCallNode(AsyncNode):
                 if not tool_name or tool_name == "unknown":
                     continue
 
-                # Defensive normalization for known tools (time_range only)
-                if tool_name == "google_calendar" and isinstance(parameters, dict):
-                    tr = parameters.get("time_range")
-                    if isinstance(tr, str):
-                        s = tr.strip()
-                        start_match = re.search(r"start\s*:\s*([^,}]+)", s)
-                        end_match = re.search(r"end\s*:\s*([^,}]+)", s)
-                        max_match = re.search(r"max_results\s*:\s*([0-9]+)", s)
-                        norm: Dict[str, Any] = {}
-                        if start_match:
-                            norm["start"] = start_match.group(1).strip().strip(" '")
-                        if end_match:
-                            norm["end"] = end_match.group(1).strip().strip(" '")
-                        if max_match:
-                            try:
-                                norm["max_results"] = int(max_match.group(1))
-                            except Exception:
-                                pass
-                        if norm:
-                            parameters["time_range"] = norm
+                # Parameters are already processed by centralized processor
+                # Check for processing errors
+                if isinstance(tool_call, dict) and 'error' in tool_call:
+                    logger.warning(f"Tool {tool_name} has processing error: {tool_call['error']}")
+                    # Still try to execute with available parameters
 
                 # Execute the tool
                 result = await tool_registry.execute_tool(tool_name, parameters)

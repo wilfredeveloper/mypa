@@ -147,167 +147,17 @@ class GoogleCalendarTool(ExternalTool):
             logger.error(f"Failed to initialize Google Calendar service: {str(e)}")
             raise
 
-    def _parse_event_data(self, event_data: Any) -> Dict[str, Any]:
-        """
-        Parse event_data parameter, handling both dictionary and JSON string inputs.
-        Also handles quasi-JSON format that agents sometimes generate.
 
-        Args:
-            event_data: Either a dictionary or JSON string containing event data
 
-        Returns:
-            Dictionary containing parsed event data
 
-        Raises:
-            ValueError: If event_data cannot be parsed or is invalid
-        """
-        if event_data is None:
-            raise ValueError("event_data cannot be None")
-
-        # If it's already a dictionary, return as-is
-        if isinstance(event_data, dict):
-            return event_data
-
-        # If it's a string, try to parse as JSON
-        if isinstance(event_data, str):
-            # First try standard JSON parsing
-            try:
-                parsed_data = json.loads(event_data)
-                if not isinstance(parsed_data, dict):
-                    raise ValueError(f"Parsed event_data must be a dictionary, got {type(parsed_data)}")
-                return parsed_data
-            except json.JSONDecodeError:
-                # If standard JSON fails, try to fix common quasi-JSON issues
-                try:
-                    fixed_json = self._fix_quasi_json(event_data)
-                    parsed_data = json.loads(fixed_json)
-                    if not isinstance(parsed_data, dict):
-                        raise ValueError(f"Parsed event_data must be a dictionary, got {type(parsed_data)}")
-                    return parsed_data
-                except (json.JSONDecodeError, Exception) as e:
-                    raise ValueError(f"Invalid JSON in event_data: {str(e)}")
-
-        # For any other type, try to convert to string and parse
-        try:
-            json_str = str(event_data)
-            parsed_data = json.loads(json_str)
-            if not isinstance(parsed_data, dict):
-                raise ValueError(f"Parsed event_data must be a dictionary, got {type(parsed_data)}")
-            return parsed_data
-        except (json.JSONDecodeError, TypeError) as e:
-            raise ValueError(f"Cannot parse event_data of type {type(event_data)}: {str(e)}")
-
-    def _fix_quasi_json(self, quasi_json: str) -> str:
-        """
-        Fix common quasi-JSON issues like unquoted property names and values.
-
-        Args:
-            quasi_json: String that looks like JSON but may have syntax issues
-
-        Returns:
-            Fixed JSON string
-        """
-        import re
-
-        # Remove any leading/trailing whitespace
-        fixed = quasi_json.strip()
-
-        # Step 1: Fix unquoted property names (e.g., {summary: -> {"summary":)
-        fixed = re.sub(r'([{,\[]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', fixed)
-
-        # Step 2: Fix unquoted string values
-        # We need to be more careful here to handle nested structures
-
-        # First, let's handle simple string values after colons
-        # Pattern: "key": unquoted_value where unquoted_value should be quoted
-        def quote_simple_values(text):
-            # Find all "key": value patterns
-            pattern = r'("[^"]+"\s*:\s*)([^,}\]\[{]+?)(?=\s*[,}\]])'
-
-            def replacer(match):
-                key_part = match.group(1)
-                value = match.group(2).strip()
-
-                # Don't quote if already quoted, or if it's a number, boolean, null
-                if (value.startswith('"') or value.startswith("'") or
-                    value.lower() in ['true', 'false', 'null'] or
-                    re.match(r'^-?\d+(\.\d+)?([eE][+-]?\d+)?$', value)):
-                    return match.group(0)
-
-                # Quote the value
-                return f'{key_part}"{value}"'
-
-            return re.sub(pattern, replacer, text)
-
-        # Apply simple value quoting
-        fixed = quote_simple_values(fixed)
-
-        # Step 3: Handle array elements that need quoting
-        # Pattern: [unquoted_value, or ,unquoted_value, or ,unquoted_value]
-        def quote_array_values(text):
-            # Find array contexts and quote unquoted string values
-            def array_replacer(match):
-                array_content = match.group(1)
-
-                # Split by comma and process each element
-                elements = []
-                current_element = ""
-                bracket_depth = 0
-                brace_depth = 0
-                in_quotes = False
-
-                for char in array_content:
-                    if char == '"' and (not current_element or current_element[-1] != '\\'):
-                        in_quotes = not in_quotes
-                    elif not in_quotes:
-                        if char == '[':
-                            bracket_depth += 1
-                        elif char == ']':
-                            bracket_depth -= 1
-                        elif char == '{':
-                            brace_depth += 1
-                        elif char == '}':
-                            brace_depth -= 1
-                        elif char == ',' and bracket_depth == 0 and brace_depth == 0:
-                            elements.append(current_element.strip())
-                            current_element = ""
-                            continue
-
-                    current_element += char
-
-                if current_element.strip():
-                    elements.append(current_element.strip())
-
-                # Process each element
-                processed_elements = []
-                for element in elements:
-                    element = element.strip()
-                    if element:
-                        # If it's an object or array, recursively process
-                        if element.startswith('{') or element.startswith('['):
-                            processed_elements.append(element)
-                        # If it's already quoted, a number, boolean, or null, keep as-is
-                        elif (element.startswith('"') or element.startswith("'") or
-                              element.lower() in ['true', 'false', 'null'] or
-                              re.match(r'^-?\d+(\.\d+)?([eE][+-]?\d+)?$', element)):
-                            processed_elements.append(element)
-                        # Otherwise, quote it
-                        else:
-                            processed_elements.append(f'"{element}"')
-
-                return '[' + ', '.join(processed_elements) + ']'
-
-            # Apply to arrays
-            return re.sub(r'\[([^\[\]]*)\]', array_replacer, text)
-
-        # Apply array value quoting
-        fixed = quote_array_values(fixed)
-
-        return fixed
 
     async def _list_events(self, calendar_id: str, time_range: Dict[str, Any]) -> Dict[str, Any]:
         """List calendar events."""
         try:
+            # Parse time_range if it's a string (handle parameter processing edge cases)
+            if isinstance(time_range, str):
+                time_range = self._parse_time_range_string(time_range)
+
             # Parse time range
             start_time = time_range.get("start")
             end_time = time_range.get("end")
@@ -370,16 +220,17 @@ class GoogleCalendarTool(ExternalTool):
             return await self.handle_error(e, "Listing calendar events")
 
     async def _create_event(self, calendar_id: str, event_data: Any) -> Dict[str, Any]:
-        """Create a new calendar event."""
+        """Create a new calendar event with pre-validated data."""
         try:
-            # Parse event_data (handles both dict and JSON string inputs)
-            try:
-                parsed_event_data = self._parse_event_data(event_data)
-            except ValueError as e:
-                return await self.handle_error(e, "Invalid event data format")
+            # Parse event_data if it's a string (handle parameter processing edge cases)
+            if isinstance(event_data, str):
+                try:
+                    event_data = self._parse_event_data(event_data)
+                except ValueError as e:
+                    return await self.handle_error(e, "Invalid event data format")
 
-            # Validate required fields
-            if not parsed_event_data.get("summary"):
+            # Validate required fields (additional safety check)
+            if not event_data.get("summary"):
                 return await self.handle_error(
                     ValueError("Event summary is required"),
                     "Missing event summary"
@@ -387,24 +238,24 @@ class GoogleCalendarTool(ExternalTool):
 
             # Build event object for Google Calendar API
             event = {
-                'summary': parsed_event_data.get('summary'),
-                'description': parsed_event_data.get('description', ''),
-                'location': parsed_event_data.get('location', ''),
-                'start': self._format_datetime(parsed_event_data.get('start')),
-                'end': self._format_datetime(parsed_event_data.get('end')),
+                'summary': event_data.get('summary'),
+                'description': event_data.get('description', ''),
+                'location': event_data.get('location', ''),
+                'start': self._format_datetime(event_data.get('start')),
+                'end': self._format_datetime(event_data.get('end')),
             }
 
             # Add attendees if provided
-            if parsed_event_data.get('attendees'):
+            if event_data.get('attendees'):
                 event['attendees'] = [
-                    {'email': email} for email in parsed_event_data['attendees']
+                    {'email': email} for email in event_data['attendees']
                 ]
 
             # Add reminders if provided
-            if parsed_event_data.get('reminders'):
+            if event_data.get('reminders'):
                 event['reminders'] = {
                     'useDefault': False,
-                    'overrides': parsed_event_data['reminders']
+                    'overrides': event_data['reminders']
                 }
             else:
                 event['reminders'] = {'useDefault': True}
@@ -423,7 +274,7 @@ class GoogleCalendarTool(ExternalTool):
                     "end": created_event.get('end', {}).get('dateTime'),
                     "html_link": created_event.get('htmlLink')
                 },
-                "message": f"Event '{parsed_event_data.get('summary')}' created successfully",
+                "message": f"Event '{event_data.get('summary')}' created successfully",
                 "operation": "create"
             })
 
@@ -538,6 +389,10 @@ class GoogleCalendarTool(ExternalTool):
     async def _check_availability(self, calendar_id: str, time_range: Dict[str, Any]) -> Dict[str, Any]:
         """Check availability for a given time range."""
         try:
+            # Parse time_range if it's a string (handle parameter processing edge cases)
+            if isinstance(time_range, str):
+                time_range = self._parse_time_range_string(time_range)
+
             start_time = time_range.get("start")
             end_time = time_range.get("end")
 
@@ -609,5 +464,114 @@ class GoogleCalendarTool(ExternalTool):
         else:
             # Try to convert to string
             return {'dateTime': str(dt_input), 'timeZone': self.default_timezone}
+
+    def _parse_time_range_string(self, time_range_str: str) -> Dict[str, Any]:
+        """Parse time_range string using regex extraction."""
+        import re
+
+        time_range_dict = {}
+
+        # Extract start time
+        start_match = re.search(r"start\s*:\s*([^,}]+)", time_range_str)
+        if start_match:
+            time_range_dict["start"] = start_match.group(1).strip().strip("'\"")
+
+        # Extract end time
+        end_match = re.search(r"end\s*:\s*([^,}]+)", time_range_str)
+        if end_match:
+            time_range_dict["end"] = end_match.group(1).strip().strip("'\"")
+
+        # Extract max_results
+        max_match = re.search(r"max_results\s*:\s*([0-9]+)", time_range_str)
+        if max_match:
+            try:
+                time_range_dict["max_results"] = int(max_match.group(1))
+            except ValueError:
+                pass
+
+        return time_range_dict
+
+    def _parse_event_data(self, event_data: Any) -> Dict[str, Any]:
+        """Parse event_data from various input formats (dict, JSON string, quasi-JSON)."""
+        if isinstance(event_data, dict):
+            return event_data
+
+        if isinstance(event_data, str):
+            # Try to parse as JSON first
+            try:
+                parsed = json.loads(event_data)
+                if isinstance(parsed, dict):
+                    return parsed
+                else:
+                    raise ValueError(f"Expected JSON object, got {type(parsed).__name__}")
+            except json.JSONDecodeError:
+                # Try quasi-JSON parsing
+                try:
+                    fixed_json = self._fix_quasi_json(event_data)
+                    parsed = json.loads(fixed_json)
+                    if isinstance(parsed, dict):
+                        return parsed
+                    else:
+                        raise ValueError(f"Expected JSON object after quasi-JSON fix, got {type(parsed).__name__}")
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"Could not parse event_data as JSON: {str(e)}")
+
+        raise ValueError(f"event_data must be a dict or JSON string, got {type(event_data)}")
+
+    def _fix_quasi_json(self, quasi_json: str) -> str:
+        """Fix common quasi-JSON issues to make it valid JSON."""
+        import re
+
+        # Remove outer braces if present and re-add them
+        quasi_json = quasi_json.strip()
+        if quasi_json.startswith('{') and quasi_json.endswith('}'):
+            quasi_json = quasi_json[1:-1]
+
+        # First, protect datetime values by temporarily replacing them
+        datetime_pattern = r'([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+\-][0-9]{2}:[0-9]{2})'
+        datetime_placeholders = {}
+        placeholder_counter = 0
+
+        def replace_datetime(match):
+            nonlocal placeholder_counter
+            placeholder = f"__DATETIME_PLACEHOLDER_{placeholder_counter}__"
+            datetime_placeholders[placeholder] = match.group(1)
+            placeholder_counter += 1
+            return placeholder
+
+        fixed = re.sub(datetime_pattern, replace_datetime, quasi_json)
+
+        # Add quotes around unquoted keys
+        def quote_unquoted_keys(match):
+            key = match.group(1)
+            if not (key.startswith('"') and key.endswith('"')):
+                return f'"{key}":'
+            return match.group(0)
+
+        fixed = re.sub(r'([a-zA-Z_][a-zA-Z0-9_]*)\s*:', quote_unquoted_keys, fixed)
+
+        # Add quotes around unquoted string values (but not numbers, booleans, arrays, or objects)
+        def quote_unquoted_values(match):
+            value = match.group(1).strip()
+            # Don't quote if it's already quoted, a number, boolean, array, object, or our placeholder
+            if (value.startswith('"') and value.endswith('"') or
+                value.startswith('[') or value.startswith('{') or
+                value.lower() in ['true', 'false', 'null'] or
+                re.match(r'^-?\d+(\.\d+)?$', value) or
+                value.startswith('__DATETIME_PLACEHOLDER_')):
+                return match.group(0)
+            return f': "{value}"'
+
+        fixed = re.sub(r':\s*([^",\[\]{}]+?)(?=\s*[,}])', quote_unquoted_values, fixed)
+
+        # Remove trailing commas
+        fixed = re.sub(r',\s*([}\]])', r'\1', fixed)
+
+        # Restore datetime values with quotes
+        for placeholder, datetime_value in datetime_placeholders.items():
+            fixed = fixed.replace(placeholder, f'"{datetime_value}"')
+
+        # Re-add outer braces
+        return '{' + fixed + '}'
 
 

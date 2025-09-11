@@ -80,6 +80,12 @@ class ToolRegistry(Base):
         """Check if tool requires OAuth authentication."""
         return self.is_external_tool() and self.oauth_provider is not None
 
+    @classmethod
+    def get_tool_schema(cls, tool_name: str, session) -> Optional[Dict[str, Any]]:
+        """Get schema for a specific tool by name."""
+        tool = session.query(cls).filter(cls.name == tool_name).first()
+        return tool.schema if tool else None
+
 
 class UserToolAccess(Base):
     """User-specific tool access and configuration."""

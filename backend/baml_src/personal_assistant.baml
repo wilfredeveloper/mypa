@@ -7,11 +7,13 @@ class PAThinkingResult {
   is_final bool
   needs_tools bool
   tools_to_use PAToolCall[]?
+  validation_notes string?
 }
 
 class PAToolCall {
   name string
   parameters map<string, string>
+  confidence_score float?
 }
 
 class PAResponseResult {
@@ -54,6 +56,18 @@ function PersonalAssistantThinking(
     - Which tools (if any) would be most helpful?
     - Can I provide a complete answer without tools?
 
+    IMPORTANT: When specifying tool parameters, ensure they are valid JSON objects.
+    For complex parameters like event_data or time_range, provide properly structured JSON strings.
+
+    Example tool call for Google Calendar:
+    {
+      "name": "google_calendar",
+      "parameters": {
+        "action": "create",
+        "event_data": "{\"summary\": \"Meeting with John\", \"start\": \"2025-01-15T14:00:00Z\", \"end\": \"2025-01-15T15:00:00Z\"}"
+      }
+    }
+
     You MUST respond with a JSON object containing exactly these fields:
     {
       "thinking": "Your detailed thought process about the user's request",
@@ -61,7 +75,8 @@ function PersonalAssistantThinking(
       "action_input": "The input for that action (response text, tool parameters, or clarification question). Can be null when using tools.",
       "is_final": true or false,
       "needs_tools": true or false,
-      "tools_to_use": [{"name": "tool_name", "parameters": {"key": "value"}}] or null
+      "tools_to_use": [{"name": "tool_name", "parameters": {"key": "value"}, "confidence_score": 0.9}] or null,
+      "validation_notes": "Any notes about parameter validation or structure"
     }
   "#
 }

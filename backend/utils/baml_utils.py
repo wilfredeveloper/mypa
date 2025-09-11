@@ -22,7 +22,7 @@ try:
     import sys
     import os
 
-    os.environ["BAML_LOG"] = "error"
+    # os.environ["BAML_LOG"] = "error"
     # Add the backend directory to path for imports
     backend_dir = os.path.dirname(os.path.dirname(__file__))
     if backend_dir not in sys.path:
