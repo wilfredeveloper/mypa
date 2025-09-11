@@ -228,6 +228,17 @@
             <div id="health-response" class="response-area"></div>
         </div>
 
+        <!-- Google Calendar Authorization -->
+        <div class="test-section">
+            <h2>📅 Google Calendar Authorization</h2>
+            <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+                <div id="gc-status" class="badge warn">Unknown</div>
+                <button onclick="googleAuthorize()" id="gc-connect">Authorize</button>
+                <button onclick="googleRevoke()" id="gc-revoke" class="clear-btn">Disconnect</button>
+            </div>
+            <div style="font-size:12px; color:#6b7280;">You must be logged in (below) to authorize.</div>
+        </div>
+
         <!-- Chat Section with Auth -->
         <div class="test-section">
             <div class="chat-header">
@@ -280,11 +291,103 @@
     </div>
 
     <script>
-        const API_BASE = '/api/v1/chatbot';
+        // Choose which backend to hit: default chatbot core, or Personal Assistant with tools.
+        const urlParams = new URLSearchParams(window.location.search);
+        const usePA = urlParams.get('engine') === 'pa' || urlParams.get('pa') === '1';
+        const API_BASE = usePA ? '/api/v1/personal-assistant' : '/api/v1/chatbot';
         const AUTH_BASE = '/api/v1/auth';
         let conversationHistory = [];
         let accessToken = localStorage.getItem('accessToken');
         let refreshToken = localStorage.getItem('refreshToken');
+
+        const GOOG_BASE = '/api/v1/google';
+
+        function setGCStatus(authorized) {
+            const badge = document.getElementById('gc-status');
+            const connect = document.getElementById('gc-connect');
+            const revoke = document.getElementById('gc-revoke');
+            if (!accessToken) {
+                badge.textContent = 'Login required';
+                badge.className = 'badge warn';
+                connect.disabled = false;
+                revoke.disabled = true;
+                return;
+            }
+            if (authorized) {
+                badge.textContent = 'Google Calendar: Authorized';
+                badge.className = 'badge success';
+                connect.disabled = true;
+                revoke.disabled = false;
+            } else {
+                badge.textContent = 'Google Calendar: Not Authorized';
+                badge.className = 'badge warn';
+                connect.disabled = false;
+                revoke.disabled = true;
+            }
+        }
+
+        async function googleStatus() {
+            try {
+                if (!accessToken) { setGCStatus(false); return; }
+                const res = await fetch(`${GOOG_BASE}/oauth/status`, { headers: { ...authHeader() } });
+                if (res.status === 401 && await tryRefresh()) {
+                    return googleStatus();
+                }
+                const data = await res.json();
+                setGCStatus(!!data.authorized);
+            } catch (e) {
+                setGCStatus(false);
+            }
+        }
+
+        async function googleAuthorize() {
+            if (!accessToken) { alert('Please log in first'); return; }
+            try {
+                const res = await fetch(`${GOOG_BASE}/oauth/start`, { headers: { ...authHeader() } });
+                if (res.status === 401 && await tryRefresh()) {
+                    return googleAuthorize();
+                }
+                const data = await res.json();
+                if (!data.authorization_url) throw new Error('No authorization URL returned');
+                // Redirect browser to Google to complete consent
+                window.location.href = data.authorization_url;
+            } catch (e) {
+                alert(`OAuth start failed: ${e.message}`);
+            }
+        }
+
+        async function googleRevoke() {
+            if (!accessToken) { alert('Please log in first'); return; }
+            try {
+                const res = await fetch(`${GOOG_BASE}/oauth/revoke`, { method: 'POST', headers: { ...authHeader() } });
+                if (res.status === 401 && await tryRefresh()) {
+                    return googleRevoke();
+                }
+                await googleStatus();
+                alert('Google Calendar access revoked.');
+            } catch (e) {
+                alert(`Revoke failed: ${e.message}`);
+            }
+        }
+
+        function handleGoogleCallbackBanner() {
+            const params = new URLSearchParams(window.location.search);
+            const g = params.get('google');
+            if (g === 'authorized') {
+                alert('Google Calendar authorization successful.');
+                googleStatus();
+                // optionally remove the param without reloading
+                params.delete('google');
+                const newUrl = `${window.location.pathname}?${params.toString()}`.replace(/\?$/, '');
+                window.history.replaceState({}, '', newUrl);
+            } else if (g === 'revoked') {
+                alert('Google Calendar access disconnected.');
+                googleStatus();
+                params.delete('google');
+                const newUrl = `${window.location.pathname}?${params.toString()}`.replace(/\?$/, '');
+                window.history.replaceState({}, '', newUrl);
+            }
+        }
 
         function setAuthStatus() {
             const badge = document.getElementById('auth-status');
@@ -416,7 +519,11 @@
             const requestBody = {
                 message: msg,
                 conversation_history: conversationHistory,
-                stream: streaming
+                stream: streaming,
+                context: {
+                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                    now_iso: new Date().toISOString()
+                }
             };
 
             const typing = document.getElementById('typing');
@@ -679,6 +786,8 @@
         document.addEventListener('DOMContentLoaded', function() {
             setAuthStatus();
             checkHealth();
+            googleStatus();
+            handleGoogleCallbackBanner();
             const textarea = document.getElementById('message');
             textarea.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {

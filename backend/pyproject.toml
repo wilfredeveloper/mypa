@@ -40,6 +40,11 @@ dependencies = [
     # "python-cors>=1.7.0",  # Not needed - FastAPI has built-in CORS
     "aiosqlite>=0.21.0",
     "cryptography>=45.0.7",
+    "mcp[cli]>=1.13.1",
+    "google-api-python-client>=2.181.0",
+    "google-auth-httplib2>=0.2.0",
+    "google-auth-oauthlib>=1.2.2",
+    "tzdata>=2025.2",
 ]
 
 [project.optional-dependencies]

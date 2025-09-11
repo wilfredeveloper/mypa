@@ -18,8 +18,15 @@ async_engine = create_async_engine(
 )
 
 # Create sync engine for migrations
+# Convert async driver URLs to their sync equivalents
+_db_url = str(settings.DATABASE_URL)
+if _db_url.startswith("sqlite+aiosqlite"):
+    _sync_url = _db_url.replace("+aiosqlite", "")
+else:
+    _sync_url = _db_url.replace("+asyncpg", "")
+
 sync_engine = create_engine(
-    str(settings.DATABASE_URL).replace("+asyncpg", ""),
+    _sync_url,
     echo=settings.DEBUG,
     pool_pre_ping=True,
 )

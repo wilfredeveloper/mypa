@@ -5,13 +5,19 @@ Personal Assistant AsyncNodes following chatbot_core patterns.
 import asyncio
 import json
 from typing import Dict, Any, List, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import logging
+import re
+
 
 from pocketflow import AsyncNode
 from utils.baml_utils import RateLimitedBAMLGeminiLLM
 
 logger = logging.getLogger(__name__)
+
+
+
 
 
 class PAThinkNode(AsyncNode):
@@ -24,12 +30,40 @@ class PAThinkNode(AsyncNode):
         config = shared.get("config")
         tool_registry = shared.get("tool_registry")
         baml_client = shared.get("baml_client")
+        ctx = shared.get("context", {}) or {}
 
         # Get conversation history
         messages = session.get("messages", [])
         conversation_history = []
         for msg in messages[-10:]:  # Last 10 messages for context
             conversation_history.append(f"{msg['role']}: {msg['content']}")
+
+        # Compute time context (timezone -> now)
+        tz_from_ctx = ctx.get("timezone") or ctx.get("user_timezone") or ctx.get("tz")
+        tz_from_cfg = None
+        try:
+            cfg = getattr(config, "config_data", None) or {}
+            prefs = cfg.get("preferences", {}) if isinstance(cfg, dict) else {}
+            tz_from_cfg = prefs.get("timezone")
+        except Exception:
+            pass
+        tz_name = (tz_from_ctx or tz_from_cfg or "UTC").strip() or "UTC"
+        try:
+            tzinfo = ZoneInfo(tz_name)
+        except Exception:
+            tzinfo = ZoneInfo("UTC")
+            tz_name = "UTC"
+        now_utc = datetime.now(timezone.utc)
+        now_local = now_utc.astimezone(tzinfo)
+        time_context_prompt = (
+            "\n\nTime awareness (runtime-provided):\n"
+            f"- CURRENT_DATETIME_UTC: {now_utc.isoformat()}\n"
+            f"- USER_TIMEZONE: {tz_name}\n"
+            f"- CURRENT_DATETIME_LOCAL: {now_local.isoformat()}\n"
+            "Guidance: Interpret relative dates/times in USER_TIMEZONE. When calling tools, "
+            "always include explicit timezone offsets (RFC3339). If user omits a date range for "
+            "calendar queries, choose a sensible range based on their request and this time context."
+        )
 
         # Get available tools
         available_tools = []
@@ -44,13 +78,21 @@ class PAThinkNode(AsyncNode):
                 for tool in tools
             ]
 
+        base_system_prompt = config.system_prompt if config else ""
+        system_prompt = base_system_prompt + time_context_prompt
+
         return {
             "user_message": user_message,
             "conversation_history": "\n".join(conversation_history),
             "available_tools": available_tools,
-            "system_prompt": config.system_prompt if config else "",
+            "system_prompt": system_prompt,
             "current_thought_number": len(shared.get("thoughts", [])) + 1,
-            "baml_client": baml_client
+            "baml_client": baml_client,
+            "time_context": {
+                "timezone": tz_name,
+                "now_utc": now_utc.isoformat(),
+                "now_local": now_local.isoformat(),
+            }
         }
 
     async def exec_async(self, prep_res):
@@ -119,6 +161,84 @@ class PAThinkNode(AsyncNode):
         if "thoughts" not in shared:
             shared["thoughts"] = []
         shared["thoughts"].append(exec_res)
+        # Normalize tool parameters from BAML (fix stringified objects early)
+        try:
+            tools = exec_res.get("tools_to_use") or []
+            normalized_tools: List[Dict[str, Any]] = []
+
+            def _looks_like_obj(s: Any) -> bool:
+                return isinstance(s, str) and s.strip().startswith(("{", "[")) and s.strip().endswith(("}", "]"))
+
+            def _lenient_parse(s: str):
+                t = s.strip()
+                # Fast path
+                try:
+                    return json.loads(t)
+                except Exception:
+                    pass
+                try:
+                    cleaned = t.replace("'", '"')
+                    # Quote unquoted keys
+                    cleaned = re.sub(r'([\{\[,]\s*)([A-Za-z_][A-Za-z0-9_\-]*)\s*:', r'\1"\2":', cleaned)
+                    # Quote ISO datetime-like values if unquoted
+                    cleaned = re.sub(r':\s*([0-9]{4}-[0-9]{2}-[0-9]{2}T[^",}\]]+)', r': "\1"', cleaned)
+                    # Quote array tokens that look like bare words/emails
+                    def _quote_array_tokens(m):
+                        inner = m.group(1)
+                        parts = [p.strip() for p in inner.split(',') if p.strip() != '']
+                        def qt(p: str) -> str:
+                            if not p:
+                                return p
+                            if p.startswith(('"', '{', '[', '-')) or (p and p[0].isdigit()):
+                                return p
+                            return f'"{p}"'
+                        return '[' + ', '.join(qt(p) for p in parts) + ']'
+                    cleaned = re.sub(r'\[([^\]\[]*)\]', lambda m: _quote_array_tokens(m), cleaned)
+                    # Remove trailing commas
+                    cleaned = re.sub(r',\s*([}\]])', r'\1', cleaned)
+                    return json.loads(cleaned)
+                except Exception:
+                    return None
+
+            for tc in tools:
+                if hasattr(tc, 'name'):
+                    name = tc.name
+                    params = getattr(tc, 'parameters', {}) or {}
+                elif isinstance(tc, dict):
+                    name = tc.get('name') or tc.get('tool')
+                    params = tc.get('parameters', {})
+                else:
+                    continue
+
+                if isinstance(params, str) and _looks_like_obj(params):
+                    parsed = _lenient_parse(params)
+                    if isinstance(parsed, dict):
+                        params = parsed
+
+                if name == 'google_calendar' and isinstance(params, dict):
+                    ed = params.get('event_data')
+                    if isinstance(ed, str) and _looks_like_obj(ed):
+                        ped = _lenient_parse(ed)
+                        if isinstance(ped, dict):
+                            params['event_data'] = ped
+                    tr = params.get('time_range')
+                    if isinstance(tr, str) and _looks_like_obj(tr):
+                        ptr = _lenient_parse(tr)
+                        if isinstance(ptr, dict):
+                            params['time_range'] = ptr
+
+                normalized_tools.append({
+                    'name': name,
+                    'parameters': params
+                })
+
+            exec_res['tools_to_use'] = normalized_tools
+        except Exception as _e:
+            logger.warning(f"Failed to normalize BAML tools_to_use: {_e}")
+
+        # Persist time context for downstream nodes
+        if prep_res.get("time_context"):
+            shared["time_context"] = prep_res["time_context"]
 
         # Save current action information
         shared["current_action"] = exec_res["action"]
@@ -181,6 +301,27 @@ class PAToolCallNode(AsyncNode):
                 if not tool_name or tool_name == "unknown":
                     continue
 
+                # Defensive normalization for known tools (time_range only)
+                if tool_name == "google_calendar" and isinstance(parameters, dict):
+                    tr = parameters.get("time_range")
+                    if isinstance(tr, str):
+                        s = tr.strip()
+                        start_match = re.search(r"start\s*:\s*([^,}]+)", s)
+                        end_match = re.search(r"end\s*:\s*([^,}]+)", s)
+                        max_match = re.search(r"max_results\s*:\s*([0-9]+)", s)
+                        norm: Dict[str, Any] = {}
+                        if start_match:
+                            norm["start"] = start_match.group(1).strip().strip(" '")
+                        if end_match:
+                            norm["end"] = end_match.group(1).strip().strip(" '")
+                        if max_match:
+                            try:
+                                norm["max_results"] = int(max_match.group(1))
+                            except Exception:
+                                pass
+                        if norm:
+                            parameters["time_range"] = norm
+
                 # Execute the tool
                 result = await tool_registry.execute_tool(tool_name, parameters)
 
@@ -189,7 +330,7 @@ class PAToolCallNode(AsyncNode):
                     "parameters": parameters,
                     "result": result,
                     "success": True,
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 })
 
                 print(f"🔧 Executed tool: {tool_name}")
@@ -201,7 +342,7 @@ class PAToolCallNode(AsyncNode):
                     "parameters": parameters,
                     "result": f"Error: {str(e)}",
                     "success": False,
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 })
 
         return {"tool_results": tool_results}
@@ -233,12 +374,28 @@ class PAResponseNode(AsyncNode):
         tool_results = shared.get("current_tool_results", [])
         config = shared.get("config")
         baml_client = shared.get("baml_client")
+        time_ctx = shared.get("time_context") or {}
+
+        # Append time awareness to system prompt for response generation as well
+        base_system_prompt = config.system_prompt if config else ""
+        if time_ctx:
+            time_context_prompt = (
+                "\n\nTime awareness (runtime-provided):\n"
+                f"- CURRENT_DATETIME_UTC: {time_ctx.get('now_utc')}\n"
+                f"- USER_TIMEZONE: {time_ctx.get('timezone')}\n"
+                f"- CURRENT_DATETIME_LOCAL: {time_ctx.get('now_local')}\n"
+                "Guidance: Interpret relative dates/times in USER_TIMEZONE. When summarizing results, "
+                "use the user's local time unless otherwise requested."
+            )
+            system_prompt = base_system_prompt + time_context_prompt
+        else:
+            system_prompt = base_system_prompt
 
         return {
             "user_message": user_message,
             "thoughts": thoughts,
             "tool_results": tool_results,
-            "system_prompt": config.system_prompt if config else "",
+            "system_prompt": system_prompt,
             "baml_client": baml_client
         }
 

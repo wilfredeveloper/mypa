@@ -5,6 +5,7 @@ Google Calendar Tool for Personal Assistant.
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 import logging
+import json
 
 from app.agents.personal_assistant.tools.base import ExternalTool
 
@@ -32,13 +33,24 @@ class GoogleCalendarTool(ExternalTool):
         self.default_calendar_id = "primary"
         self.default_timezone = "UTC"
 
+    async def is_authorized(self) -> bool:
+        """Override to ensure tokens exist before use (refresh or access)."""
+        try:
+            if not self.user_access or not self.user_access.is_authorized:
+                return False
+            cfg = (self.user_access.config_data or {}).get("google_calendar_oauth", {})
+            # Accept either refresh_token or current access token
+            return bool(cfg.get("refresh_token") or cfg.get("token"))
+        except Exception:
+            return False
+
     async def execute(self, parameters: Dict[str, Any]) -> Any:
         """
         Execute Google Calendar operations.
 
         Parameters:
             action (str): Action to perform - 'list', 'create', 'update', 'delete', 'availability'
-            event_data (dict): Event data for create/update operations
+            event_data (dict|str): Event data for create/update operations (accepts dict or JSON string)
             event_id (str): Event ID for update/delete operations
             time_range (dict): Time range for list/availability operations
             calendar_id (str, optional): Calendar ID (defaults to primary)
@@ -48,7 +60,10 @@ class GoogleCalendarTool(ExternalTool):
         """
         if not await self.is_authorized():
             return await self.handle_error(
-                ValueError("Google Calendar access not authorized"),
+                ValueError(
+                    "Google Calendar not authorized. Please authorize in the app (click 'Authorize Google Calendar') "
+                    "or visit /api/v1/google/oauth/start to begin the OAuth flow."
+                ),
                 "Authorization required"
             )
 
@@ -122,20 +137,173 @@ class GoogleCalendarTool(ExternalTool):
             return await self.handle_error(e, f"Action: {action}")
 
     async def _initialize_calendar_service(self) -> None:
-        """Initialize Google Calendar API service."""
+        """Initialize Google Calendar API service using real Google APIs."""
         try:
-            # This is a placeholder for the actual Google Calendar API initialization
-            # In the OAuth implementation phase, this will be properly implemented
-            # with actual Google API client setup
-
-            # For now, we'll simulate the service initialization
-            self.calendar_service = MockGoogleCalendarService()
-
-            logger.info("Google Calendar service initialized")
-
+            from app.services.google_calendar_service import GoogleCalendarAPI
+            # Use per-user access from the tool instance
+            self.calendar_service = GoogleCalendarAPI(self.db, self.user_access)
+            logger.info("Google Calendar service initialized (Google API client)")
         except Exception as e:
             logger.error(f"Failed to initialize Google Calendar service: {str(e)}")
             raise
+
+    def _parse_event_data(self, event_data: Any) -> Dict[str, Any]:
+        """
+        Parse event_data parameter, handling both dictionary and JSON string inputs.
+        Also handles quasi-JSON format that agents sometimes generate.
+
+        Args:
+            event_data: Either a dictionary or JSON string containing event data
+
+        Returns:
+            Dictionary containing parsed event data
+
+        Raises:
+            ValueError: If event_data cannot be parsed or is invalid
+        """
+        if event_data is None:
+            raise ValueError("event_data cannot be None")
+
+        # If it's already a dictionary, return as-is
+        if isinstance(event_data, dict):
+            return event_data
+
+        # If it's a string, try to parse as JSON
+        if isinstance(event_data, str):
+            # First try standard JSON parsing
+            try:
+                parsed_data = json.loads(event_data)
+                if not isinstance(parsed_data, dict):
+                    raise ValueError(f"Parsed event_data must be a dictionary, got {type(parsed_data)}")
+                return parsed_data
+            except json.JSONDecodeError:
+                # If standard JSON fails, try to fix common quasi-JSON issues
+                try:
+                    fixed_json = self._fix_quasi_json(event_data)
+                    parsed_data = json.loads(fixed_json)
+                    if not isinstance(parsed_data, dict):
+                        raise ValueError(f"Parsed event_data must be a dictionary, got {type(parsed_data)}")
+                    return parsed_data
+                except (json.JSONDecodeError, Exception) as e:
+                    raise ValueError(f"Invalid JSON in event_data: {str(e)}")
+
+        # For any other type, try to convert to string and parse
+        try:
+            json_str = str(event_data)
+            parsed_data = json.loads(json_str)
+            if not isinstance(parsed_data, dict):
+                raise ValueError(f"Parsed event_data must be a dictionary, got {type(parsed_data)}")
+            return parsed_data
+        except (json.JSONDecodeError, TypeError) as e:
+            raise ValueError(f"Cannot parse event_data of type {type(event_data)}: {str(e)}")
+
+    def _fix_quasi_json(self, quasi_json: str) -> str:
+        """
+        Fix common quasi-JSON issues like unquoted property names and values.
+
+        Args:
+            quasi_json: String that looks like JSON but may have syntax issues
+
+        Returns:
+            Fixed JSON string
+        """
+        import re
+
+        # Remove any leading/trailing whitespace
+        fixed = quasi_json.strip()
+
+        # Step 1: Fix unquoted property names (e.g., {summary: -> {"summary":)
+        fixed = re.sub(r'([{,\[]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', fixed)
+
+        # Step 2: Fix unquoted string values
+        # We need to be more careful here to handle nested structures
+
+        # First, let's handle simple string values after colons
+        # Pattern: "key": unquoted_value where unquoted_value should be quoted
+        def quote_simple_values(text):
+            # Find all "key": value patterns
+            pattern = r'("[^"]+"\s*:\s*)([^,}\]\[{]+?)(?=\s*[,}\]])'
+
+            def replacer(match):
+                key_part = match.group(1)
+                value = match.group(2).strip()
+
+                # Don't quote if already quoted, or if it's a number, boolean, null
+                if (value.startswith('"') or value.startswith("'") or
+                    value.lower() in ['true', 'false', 'null'] or
+                    re.match(r'^-?\d+(\.\d+)?([eE][+-]?\d+)?$', value)):
+                    return match.group(0)
+
+                # Quote the value
+                return f'{key_part}"{value}"'
+
+            return re.sub(pattern, replacer, text)
+
+        # Apply simple value quoting
+        fixed = quote_simple_values(fixed)
+
+        # Step 3: Handle array elements that need quoting
+        # Pattern: [unquoted_value, or ,unquoted_value, or ,unquoted_value]
+        def quote_array_values(text):
+            # Find array contexts and quote unquoted string values
+            def array_replacer(match):
+                array_content = match.group(1)
+
+                # Split by comma and process each element
+                elements = []
+                current_element = ""
+                bracket_depth = 0
+                brace_depth = 0
+                in_quotes = False
+
+                for char in array_content:
+                    if char == '"' and (not current_element or current_element[-1] != '\\'):
+                        in_quotes = not in_quotes
+                    elif not in_quotes:
+                        if char == '[':
+                            bracket_depth += 1
+                        elif char == ']':
+                            bracket_depth -= 1
+                        elif char == '{':
+                            brace_depth += 1
+                        elif char == '}':
+                            brace_depth -= 1
+                        elif char == ',' and bracket_depth == 0 and brace_depth == 0:
+                            elements.append(current_element.strip())
+                            current_element = ""
+                            continue
+
+                    current_element += char
+
+                if current_element.strip():
+                    elements.append(current_element.strip())
+
+                # Process each element
+                processed_elements = []
+                for element in elements:
+                    element = element.strip()
+                    if element:
+                        # If it's an object or array, recursively process
+                        if element.startswith('{') or element.startswith('['):
+                            processed_elements.append(element)
+                        # If it's already quoted, a number, boolean, or null, keep as-is
+                        elif (element.startswith('"') or element.startswith("'") or
+                              element.lower() in ['true', 'false', 'null'] or
+                              re.match(r'^-?\d+(\.\d+)?([eE][+-]?\d+)?$', element)):
+                            processed_elements.append(element)
+                        # Otherwise, quote it
+                        else:
+                            processed_elements.append(f'"{element}"')
+
+                return '[' + ', '.join(processed_elements) + ']'
+
+            # Apply to arrays
+            return re.sub(r'\[([^\[\]]*)\]', array_replacer, text)
+
+        # Apply array value quoting
+        fixed = quote_array_values(fixed)
+
+        return fixed
 
     async def _list_events(self, calendar_id: str, time_range: Dict[str, Any]) -> Dict[str, Any]:
         """List calendar events."""
@@ -201,11 +369,17 @@ class GoogleCalendarTool(ExternalTool):
         except Exception as e:
             return await self.handle_error(e, "Listing calendar events")
 
-    async def _create_event(self, calendar_id: str, event_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def _create_event(self, calendar_id: str, event_data: Any) -> Dict[str, Any]:
         """Create a new calendar event."""
         try:
+            # Parse event_data (handles both dict and JSON string inputs)
+            try:
+                parsed_event_data = self._parse_event_data(event_data)
+            except ValueError as e:
+                return await self.handle_error(e, "Invalid event data format")
+
             # Validate required fields
-            if not event_data.get("summary"):
+            if not parsed_event_data.get("summary"):
                 return await self.handle_error(
                     ValueError("Event summary is required"),
                     "Missing event summary"
@@ -213,24 +387,24 @@ class GoogleCalendarTool(ExternalTool):
 
             # Build event object for Google Calendar API
             event = {
-                'summary': event_data.get('summary'),
-                'description': event_data.get('description', ''),
-                'location': event_data.get('location', ''),
-                'start': self._format_datetime(event_data.get('start')),
-                'end': self._format_datetime(event_data.get('end')),
+                'summary': parsed_event_data.get('summary'),
+                'description': parsed_event_data.get('description', ''),
+                'location': parsed_event_data.get('location', ''),
+                'start': self._format_datetime(parsed_event_data.get('start')),
+                'end': self._format_datetime(parsed_event_data.get('end')),
             }
 
             # Add attendees if provided
-            if event_data.get('attendees'):
+            if parsed_event_data.get('attendees'):
                 event['attendees'] = [
-                    {'email': email} for email in event_data['attendees']
+                    {'email': email} for email in parsed_event_data['attendees']
                 ]
 
             # Add reminders if provided
-            if event_data.get('reminders'):
+            if parsed_event_data.get('reminders'):
                 event['reminders'] = {
                     'useDefault': False,
-                    'overrides': event_data['reminders']
+                    'overrides': parsed_event_data['reminders']
                 }
             else:
                 event['reminders'] = {'useDefault': True}
@@ -249,16 +423,22 @@ class GoogleCalendarTool(ExternalTool):
                     "end": created_event.get('end', {}).get('dateTime'),
                     "html_link": created_event.get('htmlLink')
                 },
-                "message": f"Event '{event_data.get('summary')}' created successfully",
+                "message": f"Event '{parsed_event_data.get('summary')}' created successfully",
                 "operation": "create"
             })
 
         except Exception as e:
             return await self.handle_error(e, "Creating calendar event")
 
-    async def _update_event(self, calendar_id: str, event_id: str, event_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def _update_event(self, calendar_id: str, event_id: str, event_data: Any) -> Dict[str, Any]:
         """Update an existing calendar event."""
         try:
+            # Parse event_data (handles both dict and JSON string inputs)
+            try:
+                parsed_event_data = self._parse_event_data(event_data)
+            except ValueError as e:
+                return await self.handle_error(e, "Invalid event data format")
+
             # Get existing event first
             existing_event = await self.calendar_service.get_event(
                 calendar_id=calendar_id,
@@ -274,28 +454,28 @@ class GoogleCalendarTool(ExternalTool):
             # Update event fields
             updated_event = existing_event.copy()
 
-            if event_data.get('summary'):
-                updated_event['summary'] = event_data['summary']
-            if event_data.get('description') is not None:
-                updated_event['description'] = event_data['description']
-            if event_data.get('location') is not None:
-                updated_event['location'] = event_data['location']
-            if event_data.get('start'):
-                updated_event['start'] = self._format_datetime(event_data['start'])
-            if event_data.get('end'):
-                updated_event['end'] = self._format_datetime(event_data['end'])
+            if parsed_event_data.get('summary'):
+                updated_event['summary'] = parsed_event_data['summary']
+            if parsed_event_data.get('description') is not None:
+                updated_event['description'] = parsed_event_data['description']
+            if parsed_event_data.get('location') is not None:
+                updated_event['location'] = parsed_event_data['location']
+            if parsed_event_data.get('start'):
+                updated_event['start'] = self._format_datetime(parsed_event_data['start'])
+            if parsed_event_data.get('end'):
+                updated_event['end'] = self._format_datetime(parsed_event_data['end'])
 
             # Update attendees if provided
-            if event_data.get('attendees') is not None:
+            if parsed_event_data.get('attendees') is not None:
                 updated_event['attendees'] = [
-                    {'email': email} for email in event_data['attendees']
+                    {'email': email} for email in parsed_event_data['attendees']
                 ]
 
             # Update reminders if provided
-            if event_data.get('reminders') is not None:
+            if parsed_event_data.get('reminders') is not None:
                 updated_event['reminders'] = {
                     'useDefault': False,
-                    'overrides': event_data['reminders']
+                    'overrides': parsed_event_data['reminders']
                 }
 
             # Update event via Google Calendar API
@@ -431,69 +611,3 @@ class GoogleCalendarTool(ExternalTool):
             return {'dateTime': str(dt_input), 'timeZone': self.default_timezone}
 
 
-class MockGoogleCalendarService:
-    """Mock Google Calendar service for development/testing."""
-
-    def __init__(self):
-        self.events = {}  # event_id -> event_data
-        self.event_counter = 1
-
-    async def list_events(self, calendar_id: str, time_min: str, time_max: str,
-                         max_results: int = 10, single_events: bool = True,
-                         order_by: str = 'startTime') -> Dict[str, Any]:
-        """Mock list events."""
-        # Return sample events for demonstration
-        sample_events = [
-            {
-                'id': 'sample_event_1',
-                'summary': 'Team Meeting',
-                'description': 'Weekly team sync',
-                'start': {'dateTime': '2024-01-15T10:00:00Z'},
-                'end': {'dateTime': '2024-01-15T11:00:00Z'},
-                'location': 'Conference Room A',
-                'attendees': [
-                    {'email': 'colleague@example.com', 'responseStatus': 'accepted'}
-                ],
-                'reminders': {'useDefault': True},
-                'created': '2024-01-10T09:00:00Z',
-                'updated': '2024-01-10T09:00:00Z'
-            }
-        ]
-
-        return {'items': sample_events}
-
-    async def create_event(self, calendar_id: str, event: Dict[str, Any]) -> Dict[str, Any]:
-        """Mock create event."""
-        event_id = f"mock_event_{self.event_counter}"
-        self.event_counter += 1
-
-        created_event = event.copy()
-        created_event.update({
-            'id': event_id,
-            'htmlLink': f'https://calendar.google.com/event?eid={event_id}',
-            'created': datetime.utcnow().isoformat() + 'Z',
-            'updated': datetime.utcnow().isoformat() + 'Z'
-        })
-
-        self.events[event_id] = created_event
-        return created_event
-
-    async def get_event(self, calendar_id: str, event_id: str) -> Optional[Dict[str, Any]]:
-        """Mock get event."""
-        return self.events.get(event_id)
-
-    async def update_event(self, calendar_id: str, event_id: str, event: Dict[str, Any]) -> Dict[str, Any]:
-        """Mock update event."""
-        if event_id not in self.events:
-            raise ValueError(f"Event not found: {event_id}")
-
-        updated_event = event.copy()
-        updated_event['updated'] = datetime.utcnow().isoformat() + 'Z'
-
-        self.events[event_id] = updated_event
-        return updated_event
-
-    async def delete_event(self, calendar_id: str, event_id: str) -> None:
-        """Mock delete event."""
-        if event_id in self.events:
-            del self.events[event_id]

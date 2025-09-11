@@ -5,8 +5,9 @@ Tool Registry Manager for Personal Assistant.
 import importlib
 import inspect
 from typing import Dict, Any, List, Optional, Type
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
+import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -92,10 +93,16 @@ class ToolRegistryManager:
                 module_path = f"app.agents.personal_assistant.tools.builtin.{tool_registry.name}"
                 module = importlib.import_module(module_path)
 
-                # Find the tool class (should end with 'Tool')
+                # Find the concrete tool class defined in this module (should end with 'Tool')
                 tool_class = None
                 for name, obj in inspect.getmembers(module, inspect.isclass):
-                    if name.endswith('Tool') and issubclass(obj, BaseTool) and obj != BaseTool:
+                    if (
+                        name.endswith('Tool')
+                        and issubclass(obj, BaseTool)
+                        and obj != BaseTool
+                        and obj.__module__ == module.__name__  # avoid imported base classes like ExternalTool
+                        and not inspect.isabstract(obj)        # skip abstract classes
+                    ):
                         tool_class = obj
                         break
 
@@ -116,10 +123,16 @@ class ToolRegistryManager:
                 module_path = f"app.agents.personal_assistant.tools.external.{tool_registry.name}"
                 module = importlib.import_module(module_path)
 
-                # Find the tool class
+                # Find the concrete tool class defined in this module
                 tool_class = None
                 for name, obj in inspect.getmembers(module, inspect.isclass):
-                    if name.endswith('Tool') and issubclass(obj, BaseTool) and obj != BaseTool:
+                    if (
+                        name.endswith('Tool')
+                        and issubclass(obj, BaseTool)
+                        and obj != BaseTool
+                        and obj.__module__ == module.__name__  # avoid imported base classes like ExternalTool
+                        and not inspect.isabstract(obj)        # skip abstract classes
+                    ):
                         tool_class = obj
                         break
 
@@ -187,6 +200,46 @@ class ToolRegistryManager:
         if not await tool_instance.check_rate_limits():
             raise ValueError(f"Rate limit exceeded for tool '{tool_name}'")
 
+
+        # Correlation + timing
+        call_id = uuid.uuid4().hex
+        start_ts = datetime.now(timezone.utc)
+
+        # Sanitize parameters for logging
+        def _sanitize(obj: Any, depth: int = 0):
+            try:
+                if isinstance(obj, dict):
+                    redacted = {}
+                    for k, v in obj.items():
+                        kl = str(k).lower()
+                        if any(s in kl for s in ("token", "secret", "password")):
+                            redacted[k] = "***"
+                        else:
+                            redacted[k] = _sanitize(v, depth+1)
+                    return redacted
+                if isinstance(obj, list):
+                    return [_sanitize(x, depth+1) for x in obj[:50]]  # cap list length in logs
+                if isinstance(obj, str) and len(obj) > 500:
+                    return obj[:500] + "…"
+                return obj
+            except Exception:
+                return "<unloggable>"
+
+        params_preview = _sanitize(parameters)
+        try:
+            import json as _json
+            params_preview_str = _json.dumps(params_preview)[:1000]
+        except Exception:
+            params_preview_str = str(params_preview)[:1000]
+
+        logger.info(
+            "[Tool Call Start] user_id=%s tool=%s call_id=%s params=%s",
+            self.user.id,
+            tool_name,
+            call_id,
+            params_preview_str,
+        )
+
         try:
             # Execute the tool
             result = await tool_instance.execute(parameters)
@@ -194,11 +247,36 @@ class ToolRegistryManager:
             # Update usage tracking
             await self._update_usage_tracking(tool_name)
 
-            logger.info(f"Successfully executed tool {tool_name} for user {self.user.id}")
+            # Success log with duration and result meta
+            duration_ms = int((datetime.now(timezone.utc) - start_ts).total_seconds() * 1000)
+            result_type = type(result).__name__
+            size_hint = None
+            try:
+                import json as _json
+                size_hint = len(_json.dumps(result)) if isinstance(result, (dict, list)) else None
+            except Exception:
+                size_hint = None
+            logger.info(
+                "[Tool Call Success] user_id=%s tool=%s call_id=%s duration_ms=%s result_type=%s size_hint=%s",
+                self.user.id,
+                tool_name,
+                call_id,
+                duration_ms,
+                result_type,
+                size_hint,
+            )
             return result
 
         except Exception as e:
-            logger.error(f"Tool execution failed for {tool_name}: {str(e)}")
+            duration_ms = int((datetime.now(timezone.utc) - start_ts).total_seconds() * 1000)
+            logger.error(
+                "[Tool Call Error] user_id=%s tool=%s call_id=%s duration_ms=%s error=%s",
+                self.user.id,
+                tool_name,
+                call_id,
+                duration_ms,
+                str(e),
+            )
             raise
 
     async def _update_usage_tracking(self, tool_name: str) -> None:

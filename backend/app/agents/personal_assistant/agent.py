@@ -62,6 +62,16 @@ class PersonalAssistant:
         # Initialize tool registry
         self._tool_registry = ToolRegistryManager(self.user, self.db)
         await self._tool_registry.initialize()
+        # Log available tools right after registry initialization
+        try:
+            available_tools = await self._tool_registry.get_available_tools()
+            tool_names = ", ".join([t.name for t in available_tools]) if available_tools else "none"
+            logger.info(
+                f"Available tools at initialization for user {self.user.id}: [{tool_names}] (count={len(available_tools)})"
+            )
+        except Exception as e:
+            logger.error(f"Failed to list available tools at initialization: {e}")
+
 
         logger.info(f"Personal Assistant initialized for user {self.user.id}")
 
@@ -155,6 +165,10 @@ class PersonalAssistant:
         })
 
         try:
+            # Refresh tool registry to reflect latest OAuth status/permissions
+            if self._tool_registry:
+                await self._tool_registry.initialize()
+
             # Create and run the workflow
             flow = create_personal_assistant_flow()
 
