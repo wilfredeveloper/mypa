@@ -17,6 +17,7 @@ from app.models.user import User
 from app.agents.personal_assistant.flow import create_personal_assistant_flow
 from app.agents.personal_assistant.tools.registry import ToolRegistryManager
 from app.agents.personal_assistant.config import PersonalAssistantConfig
+from app.agents.personal_assistant.memory import ConversationMemory
 from utils.baml_utils import RateLimitedBAMLGeminiLLM, BAMLCollectorManager
 
 logger = logging.getLogger(__name__)
@@ -142,18 +143,47 @@ class PersonalAssistant:
         Returns:
             Dictionary containing response and metadata
         """
+        # Debug: Log received session_id
+        logger.info(f"🔍 DEBUG: Received session_id: {repr(session_id)} (type: {type(session_id)})")
+
         if not session_id:
             session_id = self._generate_session_id()
+            logger.info(f"🆕 DEBUG: Generated new session_id: {session_id}")
+
+        # Debug: Log session state
+        logger.info(f"🔍 DEBUG: Checking session {session_id}")
+        logger.info(f"   📋 Current sessions in agent: {list(self._sessions.keys())}")
+        logger.info(f"   🎯 Session exists: {session_id in self._sessions}")
 
         # Initialize session if new
         if session_id not in self._sessions:
+            # Try to load existing memory from disk
+            memory = ConversationMemory.load_from_disk(session_id)
+            if memory is None:
+                memory = ConversationMemory(session_id)
+                logger.info(f"🆕 Created NEW memory for session {session_id}")
+            else:
+                logger.info(f"💾 Loaded EXISTING memory for session {session_id}")
+                # Log what was loaded
+                context_summary = memory.get_context_summary()
+                logger.info(f"📊 Loaded memory contains: {context_summary['total_entities']} entities, {context_summary['total_tool_executions']} tool executions")
+
             self._sessions[session_id] = {
                 "id": session_id,
                 "created_at": datetime.utcnow(),
                 "messages": [],
                 "context": context or {},
-                "tools_used": []
+                "tools_used": [],
+                "memory": memory
             }
+            logger.info(f"🎯 Initialized NEW session {session_id} for user {self.user.id}")
+        else:
+            logger.info(f"♻️  Reusing EXISTING session {session_id} for user {self.user.id}")
+            # Log current session state
+            session = self._sessions[session_id]
+            memory = session["memory"]
+            context_summary = memory.get_context_summary()
+            logger.info(f"📊 Current session state: {len(session['messages'])} messages, {context_summary['total_entities']} entities, {context_summary['total_tool_executions']} tool executions")
 
         session = self._sessions[session_id]
 
@@ -165,6 +195,21 @@ class PersonalAssistant:
         })
 
         try:
+            # Log detailed context before processing
+            memory = session["memory"]
+            context_summary = memory.get_context_summary()
+            logger.info(f"🧠 AGENT CONTEXT BEFORE PROCESSING:")
+            logger.info(f"   📝 User Message: '{message}'")
+            logger.info(f"   🆔 Session ID: {session_id}")
+            logger.info(f"   👤 User ID: {self.user.id}")
+            logger.info(f"   📊 Memory Summary: {context_summary}")
+
+            # Log recent conversation history
+            recent_messages = session["messages"][-3:]  # Last 3 messages including current
+            logger.info(f"   💬 Recent Messages ({len(recent_messages)}):")
+            for i, msg in enumerate(recent_messages):
+                logger.info(f"      {i+1}. [{msg['role']}]: {msg['content'][:100]}...")
+
             # Refresh tool registry to reflect latest OAuth status/permissions
             if self._tool_registry:
                 await self._tool_registry.initialize()
@@ -181,7 +226,8 @@ class PersonalAssistant:
                 "config": self.config,
                 "tool_registry": self._tool_registry,
                 "baml_client": self._baml_client,
-                "context": context or {}
+                "context": context or {},
+                "memory": session["memory"]
             }
 
             # Execute the flow
@@ -190,6 +236,19 @@ class PersonalAssistant:
             # Extract response from flow result
             response = shared_data.get("final_response", "I apologize, but I encountered an issue processing your request.")
             tools_used = shared_data.get("tools_used", [])
+
+            # Log detailed context after processing
+            context_summary_after = memory.get_context_summary()
+            logger.info(f"🎯 AGENT CONTEXT AFTER PROCESSING:")
+            logger.info(f"   📤 Response: '{response[:100]}...'")
+            logger.info(f"   🔧 Tools Used: {[tool.get('name', 'unknown') for tool in tools_used]}")
+            logger.info(f"   📊 Memory Summary After: {context_summary_after}")
+
+            # Log changes in memory
+            entities_added = context_summary_after['total_entities'] - context_summary['total_entities']
+            tools_executed = context_summary_after['total_tool_executions'] - context_summary['total_tool_executions']
+            if entities_added > 0 or tools_executed > 0:
+                logger.info(f"   📈 Changes: +{entities_added} entities, +{tools_executed} tool executions")
 
             # Add assistant response to session
             session["messages"].append({
@@ -202,6 +261,14 @@ class PersonalAssistant:
             # Update session metadata
             session["tools_used"].extend(tools_used)
             session["updated_at"] = datetime.utcnow()
+
+            # Save memory to disk
+            try:
+                memory = session.get("memory")
+                if memory:
+                    memory.save_to_disk()
+            except Exception as e:
+                logger.warning(f"Failed to save memory to disk: {str(e)}")
 
             return {
                 "response": response,

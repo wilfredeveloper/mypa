@@ -13,6 +13,7 @@ from app.api.deps import get_current_user
 from app.core.database import get_async_session
 from app.models.user import User
 from app.agents.personal_assistant.agent import PersonalAssistant
+from app.services.agent_session_manager import get_personal_assistant_agent
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -43,9 +44,10 @@ async def pa_chat(
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
     try:
-        # Initialize agent per request to ensure fresh tool registry tied to user
-        agent = PersonalAssistant(current_user, db)
-        await agent.initialize()
+        # Get cached agent instance from session manager
+        from app.services.agent_session_manager import get_agent_session_manager
+        session_manager = await get_agent_session_manager()
+        agent = await session_manager.get_agent(current_user, db)
 
         result = await agent.chat(
             message=request.message,
@@ -66,4 +68,34 @@ async def pa_chat(
     except Exception as e:
         logger.error(f"PA chat failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to process chat request")
+
+
+@router.get("/session-stats")
+async def get_session_stats(
+    current_user: User = Depends(get_current_user),
+):
+    """Get session manager statistics."""
+    try:
+        from app.services.agent_session_manager import get_agent_session_manager
+        session_manager = await get_agent_session_manager()
+        stats = session_manager.get_stats()
+        return stats
+    except Exception as e:
+        logger.error(f"Failed to get session stats: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get session statistics")
+
+
+@router.post("/cleanup-sessions")
+async def cleanup_idle_sessions(
+    current_user: User = Depends(get_current_user),
+):
+    """Manually trigger cleanup of idle agent sessions."""
+    try:
+        from app.services.agent_session_manager import get_agent_session_manager
+        session_manager = await get_agent_session_manager()
+        cleaned_count = await session_manager.cleanup_idle_agents()
+        return {"cleaned_agents": cleaned_count}
+    except Exception as e:
+        logger.error(f"Failed to cleanup sessions: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to cleanup sessions")
 

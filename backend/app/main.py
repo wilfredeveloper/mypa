@@ -132,6 +132,14 @@ def create_application() -> FastAPI:
     async def shutdown_event():
         """Application shutdown event."""
         logger.info("Shutting down FastAPI application")
+
+        # Shutdown agent session manager
+        try:
+            from app.services.agent_session_manager import get_agent_session_manager
+            session_manager = await get_agent_session_manager()
+            await session_manager.shutdown()
+        except Exception as e:
+            logger.error(f"Failed to shutdown agent session manager: {e}")
     
     # Global exception handler
     @app.exception_handler(Exception)

@@ -14,6 +14,7 @@ import re
 from pocketflow import AsyncNode
 from utils.baml_utils import RateLimitedBAMLGeminiLLM
 from app.services.parameter_processor import ParameterProcessor, ParameterProcessingError
+from app.agents.personal_assistant.context_resolver import create_context_resolver
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ class PAThinkNode(AsyncNode):
         tool_registry = shared.get("tool_registry")
         baml_client = shared.get("baml_client")
         ctx = shared.get("context", {}) or {}
+        memory = shared.get("memory")
 
         # Get conversation history
         messages = session.get("messages", [])
@@ -83,8 +85,52 @@ class PAThinkNode(AsyncNode):
                 for tool in tools
             ]
 
+        # Add memory context information
+        memory_context_prompt = ""
+        if memory:
+            try:
+                # Cleanup expired entities
+                memory.cleanup_expired_entities()
+
+                # Get recent entities for context
+                recent_entities = memory.get_recent_entities(limit=5)
+                recent_executions = memory.get_recent_tool_executions(limit=5)
+
+                if recent_entities or recent_executions:
+                    memory_context_prompt = "\n\nConversation Memory:\n"
+
+                    # Add recent entities
+                    if recent_entities:
+                        memory_context_prompt += "\nRecently discussed entities:\n"
+                        for entity in recent_entities:
+                            entity_info = f"- {entity.entity_type.value}: {entity.display_name}"
+                            if entity.entity_type.name == "CALENDAR_EVENT":
+                                start_time = entity.data.get('start', '')
+                                if start_time:
+                                    entity_info += f" (on {start_time})"
+                            entity_info += f" [ID: {entity.entity_id}]"
+                            memory_context_prompt += entity_info + "\n"
+
+                    # Add recent tool executions
+                    if recent_executions:
+                        memory_context_prompt += "\nRecent tool executions:\n"
+                        for execution in recent_executions:
+                            exec_info = f"- {execution.get_summary()}"
+                            if execution.user_request:
+                                exec_info += f" (for: '{execution.user_request[:50]}...')"
+                            memory_context_prompt += exec_info + "\n"
+
+                    memory_context_prompt += (
+                        "\nGuidance: When users refer to entities ambiguously (e.g., 'delete the event', "
+                        "'call John'), check if they match any recently discussed entities above. "
+                        "Use the entity ID for operations when you can identify the correct entity. "
+                        "You can also reference previous tool executions to provide context-aware responses."
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to build memory context: {str(e)}")
+
         base_system_prompt = config.system_prompt if config else ""
-        system_prompt = base_system_prompt + time_context_prompt
+        system_prompt = base_system_prompt + time_context_prompt + memory_context_prompt
 
         return {
             "user_message": user_message,
@@ -263,11 +309,13 @@ class PAToolCallNode(AsyncNode):
         tools_to_use = shared.get("tools_to_use", [])
         tool_registry = shared.get("tool_registry")
         user_message = shared.get("user_message", "")
+        memory = shared.get("memory")
 
         return {
             "tools_to_use": tools_to_use,
             "tool_registry": tool_registry,
-            "user_message": user_message
+            "user_message": user_message,
+            "memory": memory
         }
 
     async def exec_async(self, prep_res):
@@ -275,15 +323,23 @@ class PAToolCallNode(AsyncNode):
         tools_to_use = prep_res["tools_to_use"]
         tool_registry = prep_res["tool_registry"]
         user_message = prep_res["user_message"]
+        memory = prep_res.get("memory")
 
         if not tool_registry:
             return {"error": "Tool registry not available"}
+
+        # Create context resolver if memory is available
+        context_resolver = None
+        if memory:
+            context_resolver = create_context_resolver(memory)
 
         tool_results = []
 
         for tool_call in tools_to_use:
             tool_name = "unknown"
             parameters = {}
+            start_time = datetime.now(timezone.utc)
+
             try:
                 # Handle both dict and Pydantic object formats
                 if hasattr(tool_call, 'name'):
@@ -304,27 +360,48 @@ class PAToolCallNode(AsyncNode):
                     logger.warning(f"Tool {tool_name} has processing error: {tool_call['error']}")
                     # Still try to execute with available parameters
 
+                # Set context on tool if it supports it and we have context
+                if context_resolver and hasattr(tool_registry, '_tool_instances'):
+                    tool_instance = tool_registry._tool_instances.get(tool_name)
+                    if tool_instance and hasattr(tool_instance, 'set_context'):
+                        try:
+                            tool_instance.set_context(context_resolver, user_message)
+                            logger.debug(f"Set context on tool: {tool_name}")
+                        except Exception as e:
+                            logger.warning(f"Failed to set context on tool {tool_name}: {str(e)}")
+
                 # Execute the tool
                 result = await tool_registry.execute_tool(tool_name, parameters)
+
+                # Calculate execution time
+                end_time = datetime.now(timezone.utc)
+                execution_time_ms = (end_time - start_time).total_seconds() * 1000
 
                 tool_results.append({
                     "tool": tool_name,
                     "parameters": parameters,
                     "result": result,
                     "success": True,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
+                    "timestamp": end_time.isoformat(),
+                    "execution_time_ms": execution_time_ms
                 })
 
                 print(f"🔧 Executed tool: {tool_name}")
 
             except Exception as e:
+                # Calculate execution time even for errors
+                end_time = datetime.now(timezone.utc)
+                execution_time_ms = (end_time - start_time).total_seconds() * 1000
+
                 logger.error(f"Error executing tool {tool_name}: {str(e)}")
                 tool_results.append({
                     "tool": tool_name,
                     "parameters": parameters,
                     "result": f"Error: {str(e)}",
                     "success": False,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
+                    "timestamp": end_time.isoformat(),
+                    "execution_time_ms": execution_time_ms,
+                    "error_message": str(e)
                 })
 
         return {"tool_results": tool_results}
@@ -337,6 +414,54 @@ class PAToolCallNode(AsyncNode):
         if "tools_used" not in shared:
             shared["tools_used"] = []
         shared["tools_used"].extend(tool_results)
+
+        # Process tool results for conversation memory
+        memory = shared.get("memory")
+        user_message = shared.get("user_message", "")
+
+        if memory:
+            for tool_result in tool_results:
+                tool_name = tool_result.get("tool", "")
+                parameters = tool_result.get("parameters", {})
+                result = tool_result.get("result", {})
+                success = tool_result.get("success", False)
+                execution_time_ms = tool_result.get("execution_time_ms", 0)
+                error_message = tool_result.get("error_message")
+
+                # Infer user intent from tool name and parameters
+                user_intent = None
+                if tool_name == "google_calendar":
+                    action = parameters.get("action", "")
+                    if action:
+                        user_intent = f"{action}_calendar_event"
+
+                # Process complete tool execution with metadata
+                try:
+                    logger.info(f"🔧 TOOL EXECUTION: {tool_name}")
+                    logger.info(f"   📥 Parameters: {parameters}")
+                    logger.info(f"   ✅ Success: {success}")
+                    logger.info(f"   ⏱️  Execution Time: {execution_time_ms:.2f}ms")
+                    if error_message:
+                        logger.info(f"   ❌ Error: {error_message}")
+
+                    execution_context = memory.process_tool_execution(
+                        tool_name=tool_name,
+                        user_request=user_message,
+                        parameters=parameters,
+                        result=result,
+                        execution_time_ms=execution_time_ms,
+                        success=success,
+                        error_message=error_message,
+                        user_intent=user_intent
+                    )
+
+                    logger.info(f"   💾 Stored execution: {execution_context.execution_id}")
+                    logger.info(f"   🏷️  Extracted {len(execution_context.extracted_entity_ids)} entities")
+                    if success and execution_context.extracted_entity_ids:
+                        logger.info(f"   📋 Entity IDs: {execution_context.extracted_entity_ids}")
+
+                except Exception as e:
+                    logger.warning(f"Failed to process tool execution for memory: {str(e)}")
 
         # Save for response generation
         shared["current_tool_results"] = tool_results

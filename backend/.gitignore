@@ -159,3 +159,5 @@ alembic/versions/*.py
 logs/
 *.log
 google-client-secret.json
+
+data/memory/*

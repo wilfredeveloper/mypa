@@ -8,6 +8,7 @@ import logging
 import json
 
 from app.agents.personal_assistant.tools.base import ExternalTool
+from app.agents.personal_assistant.context_resolver import ContextResolver
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,15 @@ class GoogleCalendarTool(ExternalTool):
         # Default calendar settings
         self.default_calendar_id = "primary"
         self.default_timezone = "UTC"
+
+        # Context resolution
+        self._context_resolver = None
+        self._user_message = None
+
+    def set_context(self, context_resolver: ContextResolver, user_message: Optional[str] = None):
+        """Set context resolver and user message for context-aware operations."""
+        self._context_resolver = context_resolver
+        self._user_message = user_message
 
     async def is_authorized(self) -> bool:
         """Override to ensure tokens exist before use (refresh or access)."""
@@ -74,6 +84,16 @@ class GoogleCalendarTool(ExternalTool):
             )
 
         action = parameters.get("action", "list").lower()
+
+        # Enhance parameters with context resolution if available
+        if self._context_resolver and self._user_message:
+            try:
+                parameters = self._context_resolver.enhance_tool_parameters(
+                    "google_calendar", parameters, self._user_message
+                )
+                logger.debug("Enhanced parameters with context resolution")
+            except Exception as e:
+                logger.warning(f"Context resolution failed: {str(e)}")
 
         try:
             # Initialize calendar service if needed
@@ -120,7 +140,7 @@ class GoogleCalendarTool(ExternalTool):
                         "Missing event ID"
                     )
 
-                return await self._delete_event(calendar_id, event_id)
+                return await self._delete_event(calendar_id, event_id, parameters)
 
             elif action == "availability":
                 time_range = parameters.get("time_range", {})
@@ -351,7 +371,7 @@ class GoogleCalendarTool(ExternalTool):
         except Exception as e:
             return await self.handle_error(e, f"Updating calendar event: {event_id}")
 
-    async def _delete_event(self, calendar_id: str, event_id: str) -> Dict[str, Any]:
+    async def _delete_event(self, calendar_id: str, event_id: str, parameters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Delete a calendar event."""
         try:
             # Get event details before deletion for confirmation
@@ -374,8 +394,17 @@ class GoogleCalendarTool(ExternalTool):
                 event_id=event_id
             )
 
+            # Generate context-aware confirmation message
+            confirmation_message = f"Event '{event_summary}' deleted successfully"
+            if self._context_resolver and self._user_message and parameters:
+                context_message = self._context_resolver.generate_confirmation_message(
+                    "google_calendar", parameters, "delete"
+                )
+                if context_message:
+                    confirmation_message = context_message + f" The event '{event_summary}' has been deleted."
+
             return await self.create_success_response({
-                "message": f"Event '{event_summary}' deleted successfully",
+                "message": confirmation_message,
                 "deleted_event": {
                     "id": event_id,
                     "summary": event_summary
