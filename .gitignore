@@ -1,3 +1,4 @@
 baml_client/
 __pycache__/
 node_modules/
+backend/tests

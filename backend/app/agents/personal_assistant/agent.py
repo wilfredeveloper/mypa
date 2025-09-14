@@ -18,6 +18,8 @@ from app.agents.personal_assistant.flow import create_personal_assistant_flow
 from app.agents.personal_assistant.tools.registry import ToolRegistryManager
 from app.agents.personal_assistant.config import PersonalAssistantConfig
 from app.agents.personal_assistant.memory import ConversationMemory
+from app.services.conversation_service import ConversationService
+from app.models.conversation import ConversationSession, ConversationMessage
 from utils.baml_utils import RateLimitedBAMLGeminiLLM, BAMLCollectorManager
 
 logger = logging.getLogger(__name__)
@@ -146,14 +148,24 @@ class PersonalAssistant:
         logger.info(f"\n\n >>🔍 DEBUG: Received session_id: {repr(session_id)} (type: {type(session_id)})\n")
         logger.info(f"\n\n >>🔥Received Context: {context}\n")
 
-        if not session_id:
-            session_id = self._generate_session_id()
-            logger.info(f"\n\n >>🆕 DEBUG: Generated new session_id: {session_id}\n")
+        # Initialize conversation service
+        conversation_service = ConversationService(self.db)
+
+        # Get or create database session
+        db_session = await conversation_service.get_or_create_session(
+            user=self.user,
+            session_id=session_id,
+            context_data=context
+        )
+
+        # Use the database session ID (in case we created a new one)
+        session_id = str(db_session.session_id)  # Ensure it's a string
+        logger.info(f"\n\n >>🎯 Using session_id: {session_id} (DB session exists: {db_session.id is not None})\n")
 
         # Debug: Log session state
         logger.info(f"\n\n >>🔍 DEBUG: Checking session {session_id}\n")
         logger.info(f"\n\n >>   📋 Current sessions in agent: {list(self._sessions.keys())}\n")
-        logger.info(f"\n\n >>   🎯 Session exists: {session_id in self._sessions}\n")
+        logger.info(f"\n\n >>   🎯 Session exists in memory: {session_id in self._sessions}\n")
 
         # Initialize session if new
         if session_id not in self._sessions:
@@ -187,7 +199,13 @@ class PersonalAssistant:
 
         session = self._sessions[session_id]
 
-        # Add user message to session
+        # Add user message to database and session
+        await conversation_service.add_message(
+            session=db_session,
+            role="user",
+            content=message
+        )
+
         session["messages"].append({
             "role": "user",
             "content": message,
@@ -250,7 +268,22 @@ class PersonalAssistant:
             if entities_added > 0 or tools_executed > 0:
                 logger.info(f"\n\n >>   📈 Changes: +{entities_added} entities, +{tools_executed} tool executions\n")
 
-            # Add assistant response to session
+            # Calculate processing time
+            processing_time_ms = None
+            if session["messages"]:
+                last_user_msg = session["messages"][-1]
+                if "timestamp" in last_user_msg:
+                    processing_time_ms = int((datetime.utcnow() - last_user_msg["timestamp"]).total_seconds() * 1000)
+
+            # Add assistant response to database and session
+            await conversation_service.add_message(
+                session=db_session,
+                role="assistant",
+                content=response,
+                tools_used=tools_used,
+                processing_time_ms=processing_time_ms
+            )
+
             session["messages"].append({
                 "role": "assistant",
                 "content": response,
@@ -286,6 +319,15 @@ class PersonalAssistant:
             logger.error(f"Error in chat processing: {str(e)}", exc_info=True)
 
             error_response = "I apologize, but I encountered an error while processing your request. Please try again."
+
+            # Add error message to database
+            await conversation_service.add_message(
+                session=db_session,
+                role="assistant",
+                content=error_response,
+                has_error=True,
+                error_message=str(e)
+            )
 
             session["messages"].append({
                 "role": "assistant",

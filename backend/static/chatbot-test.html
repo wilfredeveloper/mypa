@@ -182,6 +182,37 @@
     .tabpanel { display:none }
     .tabpanel.show { display:block }
 
+    /* Session Management Styles */
+    .session-list { display: flex; flex-direction: column; gap: 8px; max-height: 400px; overflow-y: auto; }
+    .session-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; border: 1px solid var(--ring); border-radius: 8px; background: var(--card); cursor: pointer; transition: all 0.2s ease; }
+    .session-item:hover { background: color-mix(in oklab, var(--accent) 8%, var(--card)); border-color: var(--accent); }
+    .session-item.active { background: color-mix(in oklab, var(--accent) 15%, var(--card)); border-color: var(--accent); font-weight: 600; }
+    .session-info { flex: 1; }
+    .session-title { font-weight: 600; margin-bottom: 4px; }
+    .session-meta { font-size: 12px; color: var(--subtext); }
+    .session-actions { display: flex; gap: 6px; }
+    .session-actions .btn { padding: 6px 8px; font-size: 12px; }
+
+    /* Agent State Inspector Styles */
+    .debug-modal-card { background: var(--card); width: min(1200px, 96vw); height: min(800px, 90vh); border: 1px solid var(--ring); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; }
+    .debug-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+    .debug-tabs { display: flex; gap: 4px; padding: 8px; border-bottom: 1px solid var(--ring); background: color-mix(in oklab, var(--bg) 50%, var(--card)); }
+    .debug-tab { padding: 8px 16px; border: 1px solid var(--ring); border-radius: 8px; background: var(--card); cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s ease; }
+    .debug-tab.active { background: var(--accent); color: white; border-color: var(--accent); }
+    .debug-panel { flex: 1; padding: 16px; overflow-y: auto; display: none; }
+    .debug-panel.active { display: block; }
+    .debug-section { margin-bottom: 20px; }
+    .debug-section h3 { margin: 0 0 8px 0; font-size: 14px; font-weight: 600; color: var(--accent); }
+    .debug-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+    .debug-card { padding: 12px; border: 1px solid var(--ring); border-radius: 8px; background: color-mix(in oklab, var(--bg) 30%, var(--card)); }
+    .debug-card h4 { margin: 0 0 8px 0; font-size: 13px; font-weight: 600; }
+    .debug-code { font-family: ui-monospace, monospace; font-size: 12px; background: color-mix(in oklab, var(--bg) 50%, var(--card)); padding: 8px; border-radius: 6px; border: 1px solid var(--ring); white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; }
+    .debug-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 8px; border-radius: 12px; }
+    .debug-status.success { background: color-mix(in oklab, var(--success) 15%, var(--card)); color: var(--success); }
+    .debug-status.error { background: color-mix(in oklab, var(--danger) 15%, var(--card)); color: var(--danger); }
+    .debug-status.warning { background: color-mix(in oklab, var(--warn) 15%, var(--card)); color: var(--warn); }
+    .debug-refresh { position: absolute; top: 16px; right: 60px; }
+
     @keyframes spin { to { transform: rotate(360deg) } }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -197,6 +228,8 @@
         <div class="badge" id="auth-badge"><span class="dot-sm warn"></span> Not logged in</div>
         <button class="btn" id="gc-btn">Connect Google Calendar</button>
         <button class="btn ghost" id="theme-btn" title="Toggle theme">Theme</button>
+        <button class="btn" id="sessions-btn" title="Session Management">Sessions</button>
+        <button class="btn" id="debug-btn" title="Agent State Inspector (Ctrl+D)">🔍 Debug</button>
         <button class="btn" id="center-btn" title="Control Center">Control Center</button>
         <button class="btn danger" id="logout-btn" style="display:none">Logout</button>
         <button class="btn" id="login-btn" style="display:none">Login</button>
@@ -230,6 +263,7 @@
           <div class="inner">
             <textarea id="composer" placeholder="Type your message. Enter to send · Shift+Enter = newline"></textarea>
             <button class="btn" id="send">Send</button>
+            <button class="btn ghost" id="new-session" title="Start New Conversation">New</button>
             <button class="btn ghost" id="clear" title="Clear chat">Clear</button>
           </div>
         </div>
@@ -325,6 +359,100 @@
         </div>
       </div>
     </div>
+
+    <!-- Session Management Modal -->
+    <div class="modal" id="sessions-modal" role="dialog" aria-modal="true">
+      <div class="modal-card">
+        <div class="modal-head">
+          <span>Session Management</span>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button class="btn" id="create-session">New Session</button>
+            <button class="btn ghost" data-close="#sessions-modal">✕</button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div class="session-list" id="session-list">
+            <div style="text-align: center; color: var(--subtext); padding: 20px;">
+              Loading sessions...
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Agent State Inspector Modal -->
+    <div class="modal" id="debug-modal" role="dialog" aria-modal="true">
+      <div class="debug-modal-card">
+        <div class="modal-head">
+          <span>🔍 Agent State Inspector</span>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button class="btn ghost debug-refresh" id="debug-refresh" title="Refresh Data">🔄</button>
+            <button class="btn ghost" data-close="#debug-modal">✕</button>
+          </div>
+        </div>
+        <div class="debug-content">
+          <div class="debug-tabs">
+            <button class="debug-tab active" data-debug-tab="overview">Overview</button>
+            <button class="debug-tab" data-debug-tab="memory">Memory</button>
+            <button class="debug-tab" data-debug-tab="tools">Tools</button>
+            <button class="debug-tab" data-debug-tab="session">Session</button>
+            <button class="debug-tab" data-debug-tab="errors">Errors</button>
+          </div>
+
+          <div class="debug-panel active" id="debug-overview">
+            <div class="debug-section">
+              <h3>Session Overview</h3>
+              <div class="debug-grid">
+                <div class="debug-card">
+                  <h4>Current Session</h4>
+                  <div id="debug-session-id">Loading...</div>
+                </div>
+                <div class="debug-card">
+                  <h4>Message Count</h4>
+                  <div id="debug-message-count">Loading...</div>
+                </div>
+                <div class="debug-card">
+                  <h4>Session Status</h4>
+                  <div id="debug-session-status">Loading...</div>
+                </div>
+                <div class="debug-card">
+                  <h4>Last Activity</h4>
+                  <div id="debug-last-activity">Loading...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="debug-panel" id="debug-memory">
+            <div class="debug-section">
+              <h3>Conversation Memory</h3>
+              <div id="debug-memory-content">Loading memory data...</div>
+            </div>
+          </div>
+
+          <div class="debug-panel" id="debug-tools">
+            <div class="debug-section">
+              <h3>Tool Execution History</h3>
+              <div id="debug-tools-content">Loading tool data...</div>
+            </div>
+          </div>
+
+          <div class="debug-panel" id="debug-session">
+            <div class="debug-section">
+              <h3>Session Metadata</h3>
+              <div id="debug-session-content">Loading session data...</div>
+            </div>
+          </div>
+
+          <div class="debug-panel" id="debug-errors">
+            <div class="debug-section">
+              <h3>Error Logs</h3>
+              <div id="debug-errors-content">Loading error data...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -338,8 +466,9 @@
     let accessToken = localStorage.getItem('accessToken');
     let refreshToken = localStorage.getItem('refreshToken');
     let conversationHistory = [];
-    let sessionId = localStorage.getItem('pa_session_id') || `session-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
-    localStorage.setItem('pa_session_id', sessionId);
+    let sessionId = localStorage.getItem('pa_session_id') || null;
+    let currentSessionData = null;
+    let debugData = {};
 
     const prefs = {
       stream: JSON.parse(localStorage.getItem('pref_stream') || 'false'),
@@ -418,9 +547,397 @@
     async function register(){ alert('Hook up your register endpoint and wire here. UI provided.'); }
     function logout(){ setTokens(null, null); }
 
+    // ---------- Session Management ----------
+    async function createNewSession(){
+      if(!accessToken) return openAuthModal();
+      try{
+        const res = await fetch(`${API_BASE}/sessions/new`, {
+          method: 'POST',
+          headers: { ...authHeader() }
+        });
+        if(res.status === 401 && await tryRefresh()) return createNewSession();
+        const data = await res.json();
+        if(!res.ok) throw new Error(data?.detail || 'Failed to create session');
+
+        // Switch to new session
+        sessionId = data.session_id;
+        localStorage.setItem('pa_session_id', sessionId);
+        conversationHistory = [];
+        clearChat();
+
+        // Update UI
+        setBadge(el('conn-badge'), `New session: ${sessionId.slice(0,8)}...`, 'ok');
+        setTimeout(() => setBadge(el('conn-badge'), 'Idle'), 2000);
+
+        return data;
+      } catch(e){
+        alert('Failed to create new session: ' + e.message);
+      }
+    }
+
+    async function loadUserSessions(){
+      if(!accessToken) return [];
+      try{
+        const res = await fetch(`${API_BASE}/sessions?limit=20`, {
+          headers: { ...authHeader() }
+        });
+        if(res.status === 401 && await tryRefresh()) return loadUserSessions();
+        const data = await res.json();
+        if(!res.ok) throw new Error(data?.detail || 'Failed to load sessions');
+        return data.sessions || [];
+      } catch(e){
+        console.error('Failed to load sessions:', e);
+        return [];
+      }
+    }
+
+    async function loadSessionMessages(sessionId){
+      if(!accessToken || !sessionId) return [];
+      try{
+        const res = await fetch(`${API_BASE}/sessions/${sessionId}/messages`, {
+          headers: { ...authHeader() }
+        });
+        if(res.status === 401 && await tryRefresh()) return loadSessionMessages(sessionId);
+        const data = await res.json();
+        if(!res.ok) throw new Error(data?.detail || 'Failed to load messages');
+        return data.messages || [];
+      } catch(e){
+        console.error('Failed to load session messages:', e);
+        return [];
+      }
+    }
+
+    async function switchToSession(newSessionId){
+      if(newSessionId === sessionId) return;
+
+      sessionId = newSessionId;
+      localStorage.setItem('pa_session_id', sessionId);
+
+      // Load session messages and rebuild conversation history
+      const messages = await loadSessionMessages(sessionId);
+      conversationHistory = messages.map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }));
+
+      // Clear and rebuild chat UI
+      clearChat();
+      messages.forEach(msg => {
+        appendMessage(msg.role, msg.content);
+      });
+
+      // Update connection badge
+      setBadge(el('conn-badge'), `Session: ${sessionId.slice(0,8)}...`, 'ok');
+      setTimeout(() => setBadge(el('conn-badge'), 'Idle'), 2000);
+
+      // Switch to chat view if not already there
+      if (el('landing').style.display !== 'none') {
+        el('landing').style.display = 'none';
+        el('chat').style.display = 'grid';
+      }
+    }
+
+    async function deleteSession(sessionIdToDelete){
+      if(!accessToken || !sessionIdToDelete) return;
+      if(!confirm('Are you sure you want to delete this session? This cannot be undone.')) return;
+
+      try{
+        const res = await fetch(`${API_BASE}/sessions/${sessionIdToDelete}`, {
+          method: 'DELETE',
+          headers: { ...authHeader() }
+        });
+        if(res.status === 401 && await tryRefresh()) return deleteSession(sessionIdToDelete);
+        if(!res.ok) throw new Error('Failed to delete session');
+
+        // If we deleted the current session, create a new one
+        if(sessionIdToDelete === sessionId){
+          await createNewSession();
+        }
+
+        // Refresh session list
+        await renderSessionList();
+      } catch(e){
+        alert('Failed to delete session: ' + e.message);
+      }
+    }
+
+    async function renderSessionList(){
+      const sessionList = el('session-list');
+      sessionList.innerHTML = '<div style="text-align: center; color: var(--subtext); padding: 20px;">Loading sessions...</div>';
+
+      const sessions = await loadUserSessions();
+
+      if(sessions.length === 0){
+        sessionList.innerHTML = '<div style="text-align: center; color: var(--subtext); padding: 20px;">No sessions found. Start a conversation to create your first session!</div>';
+        return;
+      }
+
+      sessionList.innerHTML = '';
+      sessions.forEach(session => {
+        const item = document.createElement('div');
+        item.className = `session-item ${session.session_id === sessionId ? 'active' : ''}`;
+
+        const title = session.title || `Session ${session.session_id.slice(0,8)}...`;
+        const createdAt = new Date(session.created_at).toLocaleString();
+        const lastActivity = new Date(session.last_activity_at).toLocaleString();
+
+        item.innerHTML = `
+          <div class="session-info">
+            <div class="session-title">${title}</div>
+            <div class="session-meta">
+              ${session.message_count} messages • Created: ${createdAt}
+              ${session.last_activity_at !== session.created_at ? ` • Last: ${lastActivity}` : ''}
+            </div>
+          </div>
+          <div class="session-actions">
+            <button class="btn ghost" onclick="switchToSession('${session.session_id}')" title="Switch to this session">Open</button>
+            <button class="btn danger" onclick="deleteSession('${session.session_id}')" title="Delete this session">Delete</button>
+          </div>
+        `;
+
+        sessionList.appendChild(item);
+      });
+    }
+
+    // ---------- Agent State Inspector ----------
+    async function loadDebugData(){
+      if(!accessToken || !sessionId) {
+        debugData = { error: 'No active session or not authenticated' };
+        return;
+      }
+
+      try{
+        // Load session data with messages
+        const sessionRes = await fetch(`${API_BASE}/sessions/${sessionId}/messages`, {
+          headers: { ...authHeader() }
+        });
+        if(sessionRes.status === 401 && await tryRefresh()) return loadDebugData();
+
+        let sessionData = {};
+        if(sessionRes.ok){
+          sessionData = await sessionRes.json();
+        }
+
+        // Load session stats (we'll create this endpoint)
+        const statsRes = await fetch(`${API_BASE}/session-stats`, {
+          headers: { ...authHeader() }
+        });
+        let statsData = {};
+        if(statsRes.ok){
+          statsData = await statsRes.json();
+        }
+
+        debugData = {
+          session: sessionData,
+          stats: statsData,
+          timestamp: new Date().toISOString(),
+          sessionId: sessionId,
+          conversationHistory: conversationHistory
+        };
+
+      } catch(e){
+        debugData = { error: e.message, timestamp: new Date().toISOString() };
+      }
+    }
+
+    function renderDebugOverview(){
+      const panel = el('debug-overview');
+      if(!debugData || debugData.error){
+        panel.innerHTML = `<div class="debug-card"><h4>Error</h4><div class="debug-status error">${debugData?.error || 'No data available'}</div></div>`;
+        return;
+      }
+
+      const session = debugData.session;
+      const messageCount = session?.messages?.length || conversationHistory.length;
+      const lastActivity = session?.messages?.length > 0 ?
+        new Date(session.messages[session.messages.length - 1].created_at).toLocaleString() :
+        'No messages';
+
+      el('debug-session-id').innerHTML = `<code>${sessionId || 'None'}</code>`;
+      el('debug-message-count').innerHTML = `<span class="debug-status success">${messageCount} messages</span>`;
+      el('debug-session-status').innerHTML = `<span class="debug-status ${sessionId ? 'success' : 'warning'}">${sessionId ? 'Active' : 'No Session'}</span>`;
+      el('debug-last-activity').innerHTML = `<span style="font-size: 12px;">${lastActivity}</span>`;
+    }
+
+    function renderDebugMemory(){
+      const content = el('debug-memory-content');
+      if(!debugData || debugData.error){
+        content.innerHTML = `<div class="debug-status error">${debugData?.error || 'No data available'}</div>`;
+        return;
+      }
+
+      const memoryHtml = `
+        <div class="debug-grid">
+          <div class="debug-card">
+            <h4>Conversation History</h4>
+            <div class="debug-code">${JSON.stringify(conversationHistory, null, 2)}</div>
+          </div>
+          <div class="debug-card">
+            <h4>Session Context</h4>
+            <div class="debug-code">${JSON.stringify({
+              sessionId: sessionId,
+              messageCount: conversationHistory.length,
+              lastMessage: conversationHistory[conversationHistory.length - 1] || null
+            }, null, 2)}</div>
+          </div>
+        </div>
+      `;
+      content.innerHTML = memoryHtml;
+    }
+
+    function renderDebugTools(){
+      const content = el('debug-tools-content');
+      if(!debugData || debugData.error){
+        content.innerHTML = `<div class="debug-status error">${debugData?.error || 'No data available'}</div>`;
+        return;
+      }
+
+      const messages = debugData.session?.messages || [];
+      const toolMessages = messages.filter(msg => msg.role === 'assistant' && msg.tools_used && msg.tools_used.length > 0);
+
+      if(toolMessages.length === 0){
+        content.innerHTML = '<div class="debug-status warning">No tool executions found in this session</div>';
+        return;
+      }
+
+      const toolsHtml = toolMessages.map((msg, index) => `
+        <div class="debug-card">
+          <h4>Tool Execution #${index + 1}</h4>
+          <div style="margin-bottom: 8px;">
+            <span class="debug-status success">Tools: ${msg.tools_used.join(', ')}</span>
+            ${msg.processing_time_ms ? `<span class="debug-status">${msg.processing_time_ms}ms</span>` : ''}
+          </div>
+          <div class="debug-code">${JSON.stringify({
+            tools: msg.tools_used,
+            processingTime: msg.processing_time_ms,
+            hasError: msg.has_error,
+            timestamp: msg.created_at
+          }, null, 2)}</div>
+        </div>
+      `).join('');
+
+      content.innerHTML = `<div class="debug-grid">${toolsHtml}</div>`;
+    }
+
+    function renderDebugSession(){
+      const content = el('debug-session-content');
+      if(!debugData || debugData.error){
+        content.innerHTML = `<div class="debug-status error">${debugData?.error || 'No data available'}</div>`;
+        return;
+      }
+
+      const sessionInfo = {
+        sessionId: sessionId,
+        messageCount: conversationHistory.length,
+        lastRefresh: debugData.timestamp,
+        localStorage: {
+          sessionId: localStorage.getItem('pa_session_id'),
+          accessToken: !!localStorage.getItem('accessToken'),
+          theme: localStorage.getItem('theme')
+        },
+        browserInfo: {
+          userAgent: navigator.userAgent,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          language: navigator.language
+        }
+      };
+
+      content.innerHTML = `
+        <div class="debug-grid">
+          <div class="debug-card">
+            <h4>Session Information</h4>
+            <div class="debug-code">${JSON.stringify(sessionInfo, null, 2)}</div>
+          </div>
+          <div class="debug-card">
+            <h4>Raw Session Data</h4>
+            <div class="debug-code">${JSON.stringify(debugData.session, null, 2)}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderDebugErrors(){
+      const content = el('debug-errors-content');
+      if(!debugData || debugData.error){
+        content.innerHTML = `<div class="debug-status error">Debug Error: ${debugData?.error || 'No data available'}</div>`;
+        return;
+      }
+
+      const messages = debugData.session?.messages || [];
+      const errorMessages = messages.filter(msg => msg.has_error);
+
+      if(errorMessages.length === 0){
+        content.innerHTML = '<div class="debug-status success">No errors found in this session</div>';
+        return;
+      }
+
+      const errorsHtml = errorMessages.map((msg, index) => `
+        <div class="debug-card">
+          <h4>Error #${index + 1}</h4>
+          <div style="margin-bottom: 8px;">
+            <span class="debug-status error">Error in ${msg.role} message</span>
+            <span class="debug-status">${new Date(msg.created_at).toLocaleString()}</span>
+          </div>
+          <div class="debug-code">${JSON.stringify({
+            role: msg.role,
+            error: msg.error_message,
+            content: msg.content.substring(0, 200) + (msg.content.length > 200 ? '...' : ''),
+            timestamp: msg.created_at
+          }, null, 2)}</div>
+        </div>
+      `).join('');
+
+      content.innerHTML = `<div class="debug-grid">${errorsHtml}</div>`;
+    }
+
+    async function refreshDebugData(){
+      const refreshBtn = el('debug-refresh');
+      refreshBtn.textContent = '⟳';
+      refreshBtn.disabled = true;
+
+      await loadDebugData();
+      renderCurrentDebugPanel();
+
+      refreshBtn.textContent = '🔄';
+      refreshBtn.disabled = false;
+    }
+
+    function renderCurrentDebugPanel(){
+      const activeTab = document.querySelector('.debug-tab.active')?.dataset.debugTab || 'overview';
+
+      switch(activeTab){
+        case 'overview': renderDebugOverview(); break;
+        case 'memory': renderDebugMemory(); break;
+        case 'tools': renderDebugTools(); break;
+        case 'session': renderDebugSession(); break;
+        case 'errors': renderDebugErrors(); break;
+      }
+    }
+
+    function wireDebugTabs(){
+      document.querySelectorAll('.debug-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.debug-tab').forEach(t => t.classList.remove('active'));
+          document.querySelectorAll('.debug-panel').forEach(p => p.classList.remove('active'));
+
+          tab.classList.add('active');
+          document.getElementById(`debug-${tab.dataset.debugTab}`).classList.add('active');
+
+          renderCurrentDebugPanel();
+        });
+      });
+    }
+
     // ---------- Chat ----------
     async function sendMessage(text){
       const msg = text ?? el('composer').value; if(!msg.trim()) return; if(!accessToken) return openAuthModal();
+
+      // Ensure we have a session
+      if(!sessionId){
+        const newSession = await createNewSession();
+        if(!newSession) return; // Failed to create session
+      }
+
       if (el('landing').style.display !== 'none') { el('landing').style.display='none'; el('chat').style.display='grid' }
       appendMessage('user', msg); el('composer').value='';
       const streaming = JSON.parse(localStorage.getItem('pref_stream')||'false');
@@ -472,6 +989,8 @@
       // header buttons
       el('gc-btn').onclick = () => googleAuthorize();
       el('theme-btn').onclick = () => { const next=document.body.getAttribute('data-theme')==='dark'?'light':'dark'; document.body.setAttribute('data-theme',next); localStorage.setItem('theme',next) };
+      el('sessions-btn').onclick = () => { openModal('#sessions-modal'); renderSessionList(); };
+      el('debug-btn').onclick = async () => { openModal('#debug-modal'); await loadDebugData(); renderCurrentDebugPanel(); };
       el('center-btn').onclick = () => { openModal('#center-modal'); googleStatus(); document.querySelector('.tab[data-tab="google"]').click(); };
       el('logout-btn').onclick = logout; el('login-btn').onclick = openAuthModal;
 
@@ -482,6 +1001,7 @@
 
       // chat
       el('send').onclick = () => sendMessage();
+      el('new-session').onclick = createNewSession;
       el('composer').addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMessage() } });
       el('composer').addEventListener('input', ()=> el('char-count').textContent = el('composer').value.length);
       el('clear').onclick = clearChat;
@@ -498,6 +1018,21 @@
       el('login-email').addEventListener('keydown', e => { if(e.key === 'Enter') { e.preventDefault(); el('login-password').focus(); }});
       el('login-password').addEventListener('keydown', e => { if(e.key === 'Enter') { e.preventDefault(); login(); }});
 
+      // session management
+      el('create-session').onclick = createNewSession;
+      el('debug-refresh').onclick = refreshDebugData;
+
+      // Wire debug tabs
+      wireDebugTabs();
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', e => {
+        if(e.ctrlKey && e.key === 'd'){
+          e.preventDefault();
+          el('debug-btn').click();
+        }
+      });
+
       // settings
       el('pref-stream').checked = prefs.stream; el('pref-compact').checked = prefs.compact; el('pref-stream').onchange = (e)=> localStorage.setItem('pref_stream', e.target.checked); el('pref-compact').onchange = (e)=> localStorage.setItem('pref_compact', e.target.checked); el('theme').value=prefs.theme; el('theme').onchange=(e)=>{ document.body.setAttribute('data-theme', e.target.value); localStorage.setItem('theme', e.target.value) };
 
@@ -505,6 +1040,12 @@
 
       // If already authenticated, hide landing auth CTA
       if(accessToken){ document.getElementById('landing-auth-cta').style.display='none' }
+
+      // Initialize session if we have one stored
+      if(sessionId && accessToken){
+        setBadge(el('conn-badge'), `Session: ${sessionId.slice(0,8)}...`, 'ok');
+        setTimeout(() => setBadge(el('conn-badge'), 'Idle'), 2000);
+      }
     }
 
     document.addEventListener('DOMContentLoaded', wire);

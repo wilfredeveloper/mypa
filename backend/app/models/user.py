@@ -55,6 +55,7 @@ class User(Base):
     agent_configs = relationship("AgentConfig", back_populates="user", cascade="all, delete-orphan")
     tool_access = relationship("UserToolAccess", back_populates="user", cascade="all, delete-orphan")
     oauth_tokens = relationship("OAuthToken", back_populates="user", cascade="all, delete-orphan")
+    conversation_sessions = relationship("ConversationSession", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email='{self.email}')>"
