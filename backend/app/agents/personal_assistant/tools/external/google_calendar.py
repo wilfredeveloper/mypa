@@ -280,6 +280,10 @@ class GoogleCalendarTool(ExternalTool):
             else:
                 event['reminders'] = {'useDefault': True}
 
+            # Add recurrence if provided
+            if event_data.get('recurrence'):
+                event['recurrence'] = event_data['recurrence']
+
             # Create event via Google Calendar API (mocked for now)
             created_event = await self.calendar_service.create_event(
                 calendar_id=calendar_id,
@@ -348,6 +352,10 @@ class GoogleCalendarTool(ExternalTool):
                     'useDefault': False,
                     'overrides': parsed_event_data['reminders']
                 }
+
+            # Update recurrence if provided
+            if parsed_event_data.get('recurrence') is not None:
+                updated_event['recurrence'] = parsed_event_data['recurrence']
 
             # Update event via Google Calendar API
             result = await self.calendar_service.update_event(
@@ -570,6 +578,19 @@ class GoogleCalendarTool(ExternalTool):
 
         fixed = re.sub(datetime_pattern, replace_datetime, quasi_json)
 
+        # Protect RRULE patterns by temporarily replacing them
+        rrule_pattern = r'(RRULE:[A-Z0-9=;,]+)'
+        rrule_placeholders = {}
+
+        def replace_rrule(match):
+            nonlocal placeholder_counter
+            placeholder = f"__RRULE_PLACEHOLDER_{placeholder_counter}__"
+            rrule_placeholders[placeholder] = match.group(1)
+            placeholder_counter += 1
+            return placeholder
+
+        fixed = re.sub(rrule_pattern, replace_rrule, fixed)
+
         # Add quotes around unquoted keys
         def quote_unquoted_keys(match):
             key = match.group(1)
@@ -582,12 +603,13 @@ class GoogleCalendarTool(ExternalTool):
         # Add quotes around unquoted string values (but not numbers, booleans, arrays, or objects)
         def quote_unquoted_values(match):
             value = match.group(1).strip()
-            # Don't quote if it's already quoted, a number, boolean, array, object, or our placeholder
+            # Don't quote if it's already quoted, a number, boolean, array, object, or our placeholders
             if (value.startswith('"') and value.endswith('"') or
                 value.startswith('[') or value.startswith('{') or
                 value.lower() in ['true', 'false', 'null'] or
                 re.match(r'^-?\d+(\.\d+)?$', value) or
-                value.startswith('__DATETIME_PLACEHOLDER_')):
+                value.startswith('__DATETIME_PLACEHOLDER_') or
+                value.startswith('__RRULE_PLACEHOLDER_')):
                 return match.group(0)
             return f': "{value}"'
 
@@ -599,6 +621,10 @@ class GoogleCalendarTool(ExternalTool):
         # Restore datetime values with quotes
         for placeholder, datetime_value in datetime_placeholders.items():
             fixed = fixed.replace(placeholder, f'"{datetime_value}"')
+
+        # Restore RRULE values with quotes
+        for placeholder, rrule_value in rrule_placeholders.items():
+            fixed = fixed.replace(placeholder, f'"{rrule_value}"')
 
         # Re-add outer braces
         return '{' + fixed + '}'

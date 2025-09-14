@@ -74,6 +74,20 @@ Examples (Google Calendar tool usage):
       }
     }
   }
+- Correct (create recurring event):
+  {
+    "name": "google_calendar",
+    "parameters": {
+      "action": "create",
+      "calendar_id": "primary",
+      "event_data": {
+        "summary": "Daily Standup",
+        "start": "2025-09-15T09:00:00+00:00",
+        "end": "2025-09-15T09:30:00+00:00",
+        "recurrence": ["RRULE:FREQ=DAILY"]
+      }
+    }
+  }
 - Incorrect (do NOT output stringified objects):
   {
     "name": "google_calendar",

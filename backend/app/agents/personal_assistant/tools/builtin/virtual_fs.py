@@ -60,8 +60,22 @@ class VirtualFileSystemTool(BaseTool):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._virtual_files: Dict[str, VirtualFile] = {}  # filename -> VirtualFile
-        self._session_id = None
+        self._files_by_session: Dict[str, Dict[str, VirtualFile]] = {}  # session_id -> {filename -> VirtualFile}
+        self._current_session_id = None
+
+    def set_session_context(self, session_id: str) -> None:
+        """Set the current session context for file operations."""
+        self._current_session_id = session_id
+
+    def _get_session_files(self, session_id: Optional[str] = None) -> Dict[str, VirtualFile]:
+        """Get files for a specific session."""
+        session_id = session_id or self._current_session_id
+        if not session_id:
+            return {}
+
+        if session_id not in self._files_by_session:
+            self._files_by_session[session_id] = {}
+        return self._files_by_session[session_id]
 
     async def execute(self, parameters: Dict[str, Any]) -> Any:
         """
@@ -73,6 +87,7 @@ class VirtualFileSystemTool(BaseTool):
             content (str, optional): File content for 'create' and 'update' actions
             search_term (str, optional): Search term for 'search' action
             metadata (dict, optional): File metadata for 'create' and 'update' actions
+            session_id (str, optional): Session ID for session-scoped operations
 
         Returns:
             File system operation result
@@ -84,6 +99,11 @@ class VirtualFileSystemTool(BaseTool):
             )
 
         action = parameters.get("action", "list").lower()
+        session_id = parameters.get("session_id")
+
+        # Set session context if provided
+        if session_id:
+            self.set_session_context(session_id)
 
         try:
             if action == "create":
@@ -154,8 +174,10 @@ class VirtualFileSystemTool(BaseTool):
     async def _create_file(self, filename: str, content: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new virtual file."""
         try:
+            session_files = self._get_session_files()
+
             # Check if file already exists
-            if filename in self._virtual_files:
+            if filename in session_files:
                 return await self.handle_error(
                     ValueError(f"File '{filename}' already exists"),
                     "File already exists"
@@ -170,7 +192,7 @@ class VirtualFileSystemTool(BaseTool):
 
             # Create virtual file
             virtual_file = VirtualFile(filename, content, metadata)
-            self._virtual_files[filename] = virtual_file
+            session_files[filename] = virtual_file
 
             return await self.create_success_response({
                 "message": f"File '{filename}' created successfully",
@@ -184,13 +206,15 @@ class VirtualFileSystemTool(BaseTool):
     async def _read_file(self, filename: str) -> Dict[str, Any]:
         """Read a virtual file."""
         try:
-            if filename not in self._virtual_files:
+            session_files = self._get_session_files()
+
+            if filename not in session_files:
                 return await self.handle_error(
                     ValueError(f"File '{filename}' not found"),
                     "File not found"
                 )
 
-            virtual_file = self._virtual_files[filename]
+            virtual_file = session_files[filename]
 
             return await self.create_success_response({
                 "file": virtual_file.to_dict(),
@@ -258,10 +282,11 @@ class VirtualFileSystemTool(BaseTool):
     async def _list_files(self) -> Dict[str, Any]:
         """List all virtual files."""
         try:
+            session_files = self._get_session_files()
             files_info = []
             total_size = 0
 
-            for filename, virtual_file in self._virtual_files.items():
+            for filename, virtual_file in session_files.items():
                 file_info = {
                     "filename": filename,
                     "size_bytes": virtual_file.size,

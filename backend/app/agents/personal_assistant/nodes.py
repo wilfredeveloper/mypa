@@ -108,6 +108,28 @@ class PAThinkNode(AsyncNode):
                                 start_time = entity.data.get('start', '')
                                 if start_time:
                                     entity_info += f" (on {start_time})"
+                            elif entity.entity_type.name == "PLAN":
+                                # Include full plan details for plans
+                                plan_data = entity.data
+                                if isinstance(plan_data, dict):
+                                    entity_info += f"\n  Plan Details:"
+                                    entity_info += f"\n  - Status: {plan_data.get('status', 'unknown')}"
+                                    entity_info += f"\n  - Priority: {plan_data.get('priority', 'unknown')}"
+                                    entity_info += f"\n  - Complexity: {plan_data.get('complexity', 'unknown')}"
+
+                                    subtasks = plan_data.get('subtasks', [])
+                                    if subtasks:
+                                        entity_info += f"\n  - Subtasks ({len(subtasks)}):"
+                                        for i, subtask in enumerate(subtasks[:5], 1):  # Show first 5 subtasks
+                                            entity_info += f"\n    {i}. {subtask.get('title', 'Untitled')} ({subtask.get('status', 'pending')})"
+                                        if len(subtasks) > 5:
+                                            entity_info += f"\n    ... and {len(subtasks) - 5} more subtasks"
+
+                                    progress = plan_data.get('progress', {})
+                                    if progress:
+                                        completion = progress.get('completion_percentage', 0)
+                                        entity_info += f"\n  - Progress: {completion}% complete"
+
                             entity_info += f" [ID: {entity.entity_id}]"
                             memory_context_prompt += entity_info + "\n"
 
@@ -118,12 +140,27 @@ class PAThinkNode(AsyncNode):
                             exec_info = f"- {execution.get_summary()}"
                             if execution.user_request:
                                 exec_info += f" (for: '{execution.user_request[:50]}...')"
+
+                            # Include result details for planning tool executions
+                            if execution.tool_name == "planning" and execution.raw_output:
+                                result = execution.raw_output
+                                if isinstance(result, dict) and result.get('success'):
+                                    data = result.get('data', {})
+                                    if 'plan' in data:
+                                        plan = data['plan']
+                                        exec_info += f"\n    → Created plan: {plan.get('title', 'Untitled')}"
+                                        exec_info += f" (ID: {plan.get('id', 'unknown')})"
+                                        if 'subtasks' in plan:
+                                            exec_info += f" with {len(plan['subtasks'])} subtasks"
+
                             memory_context_prompt += exec_info + "\n"
 
                     memory_context_prompt += (
                         "\nGuidance: When users refer to entities ambiguously (e.g., 'delete the event', "
-                        "'call John'), check if they match any recently discussed entities above. "
+                        "'call John', 'execute the plan'), check if they match any recently discussed entities above. "
                         "Use the entity ID for operations when you can identify the correct entity. "
+                        "For plans: If a user asks to execute, show, or work with a plan, use the plan details shown above. "
+                        "You can see the full plan structure including all subtasks and their status. "
                         "You can also reference previous tool executions to provide context-aware responses."
                     )
             except Exception as e:
@@ -310,12 +347,14 @@ class PAToolCallNode(AsyncNode):
         tool_registry = shared.get("tool_registry")
         user_message = shared.get("user_message", "")
         memory = shared.get("memory")
+        session_id = shared.get("session_id")
 
         return {
             "tools_to_use": tools_to_use,
             "tool_registry": tool_registry,
             "user_message": user_message,
-            "memory": memory
+            "memory": memory,
+            "session_id": session_id
         }
 
     async def exec_async(self, prep_res):
@@ -324,6 +363,7 @@ class PAToolCallNode(AsyncNode):
         tool_registry = prep_res["tool_registry"]
         user_message = prep_res["user_message"]
         memory = prep_res.get("memory")
+        session_id = prep_res.get("session_id")
 
         if not tool_registry:
             return {"error": "Tool registry not available"}
@@ -369,6 +409,32 @@ class PAToolCallNode(AsyncNode):
                             logger.debug(f"Set context on tool: {tool_name}")
                         except Exception as e:
                             logger.warning(f"Failed to set context on tool {tool_name}: {str(e)}")
+
+                # Set memory and session context for planning tool
+                if tool_name == "planning" and hasattr(tool_registry, '_tool_instances'):
+                    tool_instance = tool_registry._tool_instances.get(tool_name)
+                    if tool_instance:
+                        # Set memory reference
+                        if memory and hasattr(tool_instance, 'set_memory'):
+                            tool_instance.set_memory(memory)
+                            logger.debug(f"Set memory reference on planning tool")
+
+                        # Set session context
+                        if session_id and hasattr(tool_instance, 'set_session_context'):
+                            tool_instance.set_session_context(session_id)
+                            logger.debug(f"Set session context {session_id} on planning tool")
+
+                # Set session context for virtual_fs tool
+                if tool_name == "virtual_fs" and session_id and hasattr(tool_registry, '_tool_instances'):
+                    tool_instance = tool_registry._tool_instances.get(tool_name)
+                    if tool_instance and hasattr(tool_instance, 'set_session_context'):
+                        tool_instance.set_session_context(session_id)
+                        logger.debug(f"Set session context {session_id} on virtual_fs tool")
+
+                # Add session_id to parameters for session-aware tools
+                if tool_name in ["planning", "virtual_fs"] and session_id and "session_id" not in parameters:
+                    parameters["session_id"] = session_id
+                    logger.debug(f"Added session_id {session_id} to {tool_name} tool parameters")
 
                 # Execute the tool
                 result = await tool_registry.execute_tool(tool_name, parameters)

@@ -10,7 +10,7 @@ class Resume {
 function ExtractResume(resume: string) -> Resume {
   // Specify a client as provider/model-name
   // you can use custom LLM params with a custom client name from clients.baml like "client CustomHaiku"
-  client "openai/gpt-4o" // Set OPENAI_API_KEY to use this client.
+  client AgenticGeminiRateLimited // Set OPENAI_API_KEY to use this client.
   prompt #"
     Extract from this content:
     {{ resume }}
@@ -26,17 +26,7 @@ test vaibhav_resume {
   functions [ExtractResume]
   args {
     resume #"
-      Vaibhav Gupta
-      vbv@boundaryml.com
-
-      Experience:
-      - Founder at BoundaryML
-      - CV Engineer at Google
-      - CV Engineer at Microsoft
-
-      Skills:
-      - Rust
-      - C++
+      Vaibhav Gupta is the founder of BoundaryML, bringing strong expertise in computer vision from his previous roles as an engineer at Google and Microsoft. His email is valib@boundaryml.com. With a background deeply rooted in cutting-edge CV engineering, he has contributed to impactful projects at two of the world’s leading tech companies before moving on to establish his own venture. Vaibhav is highly skilled in systems programming and performance optimization, with proficiency in Rust and C++, which he leverages to build efficient and scalable solutions.
     "#
   }
 }

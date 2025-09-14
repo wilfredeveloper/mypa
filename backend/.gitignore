@@ -161,3 +161,4 @@ logs/
 google-client-secret.json
 
 data/memory/*
+node_modules/

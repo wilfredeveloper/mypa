@@ -50,7 +50,52 @@ class PlanningTool(BaseTool):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._session_plans = {}  # In-memory storage for session plans
+        self._plans_by_session = {}  # Session-scoped storage: {session_id: {plan_id: plan_data}}
+        self._current_session_id = None  # Track current session
+
+    def set_session_context(self, session_id: str) -> None:
+        """Set the current session context for plan operations."""
+        self._current_session_id = session_id
+
+    def set_memory(self, memory) -> None:
+        """Set the conversation memory reference for plan persistence."""
+        self.memory = memory
+
+    def _get_session_plans(self, session_id: Optional[str] = None) -> Dict[str, Any]:
+        """Get plans for a specific session."""
+        session_id = session_id or self._current_session_id
+        if not session_id:
+            return {}
+
+        if session_id not in self._plans_by_session:
+            self._plans_by_session[session_id] = {}
+        return self._plans_by_session[session_id]
+
+    def _store_plan_in_memory(self, plan: Dict[str, Any], session_id: Optional[str] = None) -> None:
+        """Store plan in conversation memory if available."""
+        try:
+            # Try to get memory from the tool instance
+            memory = getattr(self, 'memory', None)
+
+            if memory:
+                from app.agents.personal_assistant.memory import EntityContext, EntityType
+                from datetime import datetime
+
+                plan_entity = EntityContext(
+                    entity_id=plan['id'],
+                    entity_type=EntityType.PLAN,
+                    display_name=plan['title'],
+                    data=plan,
+                    created_at=datetime.utcnow(),
+                    last_accessed=datetime.utcnow(),
+                    source_tool="planning"
+                )
+                memory.store_entity(plan_entity)
+                logger.debug(f"Stored plan {plan['id']} in conversation memory")
+            else:
+                logger.debug("No memory reference available for plan storage")
+        except Exception as e:
+            logger.warning(f"Failed to store plan in memory: {str(e)}")
 
     async def execute(self, parameters: Dict[str, Any]) -> Any:
         """
@@ -62,6 +107,7 @@ class PlanningTool(BaseTool):
             complexity (str): Task complexity - 'simple', 'medium', 'complex'
             plan_id (str, optional): Plan ID for 'update', 'get' actions
             updates (dict, optional): Updates for 'update' action
+            session_id (str, optional): Session ID for session-scoped operations
 
         Returns:
             Planning result
@@ -73,6 +119,11 @@ class PlanningTool(BaseTool):
             )
 
         action = parameters.get("action", "create").lower()
+        session_id = parameters.get("session_id")
+
+        # Set session context if provided
+        if session_id:
+            self.set_session_context(session_id)
 
         try:
             if action == "create":
@@ -83,7 +134,7 @@ class PlanningTool(BaseTool):
                         "Missing task description"
                     )
                 complexity = parameters.get("complexity", "medium")
-                return await self._create_plan(task, complexity)
+                return await self._create_plan(task, complexity, session_id)
 
             elif action == "update":
                 plan_id = parameters.get("plan_id")
@@ -93,7 +144,7 @@ class PlanningTool(BaseTool):
                         ValueError("plan_id is required for 'update' action"),
                         "Missing plan ID"
                     )
-                return await self._update_plan(plan_id, updates)
+                return await self._update_plan(plan_id, updates, session_id)
 
             elif action == "get":
                 plan_id = parameters.get("plan_id")
@@ -102,10 +153,10 @@ class PlanningTool(BaseTool):
                         ValueError("plan_id is required for 'get' action"),
                         "Missing plan ID"
                     )
-                return await self._get_plan(plan_id)
+                return await self._get_plan(plan_id, session_id)
 
             elif action == "list":
-                return await self._list_plans()
+                return await self._list_plans(session_id)
 
             else:
                 return await self.handle_error(
@@ -116,7 +167,7 @@ class PlanningTool(BaseTool):
         except Exception as e:
             return await self.handle_error(e, f"Action: {action}")
 
-    async def _create_plan(self, task_description: str, complexity: str) -> Dict[str, Any]:
+    async def _create_plan(self, task_description: str, complexity: str, session_id: Optional[str] = None) -> Dict[str, Any]:
         """Create a new task plan with decomposition."""
         try:
             # Validate complexity
@@ -150,13 +201,19 @@ class PlanningTool(BaseTool):
                 }
             }
 
-            # Store plan in session
-            self._session_plans[plan_id] = plan
+            # Store plan in session-scoped storage
+            session_plans = self._get_session_plans(session_id)
+            session_plans[plan_id] = plan
+
+            # Store plan in conversation memory for persistence
+            self._store_plan_in_memory(plan, session_id)
 
             return await self.create_success_response({
-                "plan": plan,
-                "message": f"Created plan with {len(subtasks)} subtasks",
-                "next_steps": self._get_next_steps(plan)
+                "plan": plan,  # Return full plan content
+                "plan_id": plan_id,
+                "message": f"Created plan '{plan['title']}' with {len(subtasks)} subtasks",
+                "next_steps": self._get_next_steps(plan),
+                "usage_tip": f"To retrieve this plan later, use plan_id: {plan_id} or search by title: '{plan['title']}'"
             })
 
         except Exception as e:
@@ -374,16 +431,18 @@ class PlanningTool(BaseTool):
 
         return next_steps
 
-    async def _update_plan(self, plan_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+    async def _update_plan(self, plan_id: str, updates: Dict[str, Any], session_id: Optional[str] = None) -> Dict[str, Any]:
         """Update an existing plan."""
         try:
-            if plan_id not in self._session_plans:
+            session_plans = self._get_session_plans(session_id)
+
+            if plan_id not in session_plans:
                 return await self.handle_error(
                     ValueError(f"Plan not found: {plan_id}"),
                     "Plan not found"
                 )
 
-            plan = self._session_plans[plan_id]
+            plan = session_plans[plan_id]
 
             # Update plan fields
             for key, value in updates.items():
@@ -417,31 +476,90 @@ class PlanningTool(BaseTool):
         except Exception as e:
             return await self.handle_error(e, "Updating plan")
 
-    async def _get_plan(self, plan_id: str) -> Dict[str, Any]:
-        """Get a specific plan."""
+    async def _get_plan(self, plan_id: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+        """Get a specific plan by ID or search by description."""
         try:
-            if plan_id not in self._session_plans:
-                return await self.handle_error(
-                    ValueError(f"Plan not found: {plan_id}"),
-                    "Plan not found"
-                )
+            session_plans = self._get_session_plans(session_id)
 
-            plan = self._session_plans[plan_id]
+            # First try exact UUID match
+            if plan_id in session_plans:
+                plan = session_plans[plan_id]
+                return await self.create_success_response({
+                    "plan": plan,
+                    "next_steps": self._get_next_steps(plan)
+                })
 
-            return await self.create_success_response({
-                "plan": plan,
-                "next_steps": self._get_next_steps(plan)
-            })
+            # If not found by UUID, try to find by title/description match
+            plan_id_lower = plan_id.lower()
+            matching_plans = []
+
+            for stored_plan_id, plan in session_plans.items():
+                title_lower = plan.get("title", "").lower()
+                description_lower = plan.get("description", "").lower()
+
+                # Check if the search term appears in title or description
+                if (plan_id_lower in title_lower or
+                    plan_id_lower in description_lower or
+                    any(word in title_lower for word in plan_id_lower.split()) or
+                    any(word in description_lower for word in plan_id_lower.split())):
+                    matching_plans.append((stored_plan_id, plan))
+
+            if len(matching_plans) == 1:
+                # Found exactly one match
+                plan_id, plan = matching_plans[0]
+                return await self.create_success_response({
+                    "plan": plan,
+                    "next_steps": self._get_next_steps(plan),
+                    "message": f"Found plan: {plan['title']}"
+                })
+            elif len(matching_plans) > 1:
+                # Multiple matches - return list of options
+                plan_summaries = [
+                    {
+                        "id": pid,
+                        "title": p["title"],
+                        "description": p["description"],
+                        "status": p["status"]
+                    }
+                    for pid, p in matching_plans
+                ]
+                return await self.create_success_response({
+                    "message": f"Found {len(matching_plans)} matching plans",
+                    "matching_plans": plan_summaries,
+                    "suggestion": "Please specify which plan you want by using its exact title or ID"
+                })
+            else:
+                # No matches found
+                if session_plans:
+                    available_plans = [
+                        {
+                            "id": pid,
+                            "title": p["title"],
+                            "status": p["status"]
+                        }
+                        for pid, p in session_plans.items()
+                    ]
+                    return await self.create_success_response({
+                        "message": f"No plan found matching '{plan_id}'",
+                        "available_plans": available_plans,
+                        "suggestion": "Use the 'list' action to see all available plans"
+                    })
+                else:
+                    return await self.handle_error(
+                        ValueError("No plans have been created yet"),
+                        "No plans available"
+                    )
 
         except Exception as e:
             return await self.handle_error(e, "Getting plan")
 
-    async def _list_plans(self) -> Dict[str, Any]:
+    async def _list_plans(self, session_id: Optional[str] = None) -> Dict[str, Any]:
         """List all plans for the session."""
         try:
+            session_plans = self._get_session_plans(session_id)
             plans_summary = []
 
-            for plan_id, plan in self._session_plans.items():
+            for plan_id, plan in session_plans.items():
                 plans_summary.append({
                     "id": plan["id"],
                     "title": plan["title"],

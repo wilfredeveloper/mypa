@@ -29,6 +29,7 @@ class EntityType(Enum):
     CONTACT = "contact"
     EMAIL = "email"
     DOCUMENT = "document"
+    PLAN = "plan"
     TASK = "task"
     LOCATION = "location"
     GENERIC = "generic"

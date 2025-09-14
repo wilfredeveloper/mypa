@@ -50,7 +50,7 @@ class PersonalAssistant:
         # Initialize configuration
         self._pa_config = PersonalAssistantConfig()
 
-        logger.info(f"Initialized Personal Assistant for user {user.id}")
+        logger.info(f"\n\n >>Initialized Personal Assistant for user {user.id}\n")
 
     async def initialize(self) -> None:
         """Initialize the agent with database configuration."""
@@ -67,14 +67,13 @@ class PersonalAssistant:
         try:
             available_tools = await self._tool_registry.get_available_tools()
             tool_names = ", ".join([t.name for t in available_tools]) if available_tools else "none"
-            logger.info(
-                f"Available tools at initialization for user {self.user.id}: [{tool_names}] (count={len(available_tools)})"
-            )
+            
+            logger.info(f"\n\n >>Available tools at initialization for user {self.user.id}: [{tool_names}] (count={len(available_tools)})\n")
         except Exception as e:
             logger.error(f"Failed to list available tools at initialization: {e}")
 
 
-        logger.info(f"Personal Assistant initialized for user {self.user.id}")
+        logger.info(f"\n\n >>Personal Assistant initialized for user {self.user.id}\n")
 
     async def _get_or_create_config(self) -> AgentConfig:
         """Get existing config or create default one."""
@@ -112,7 +111,7 @@ class PersonalAssistant:
             await self.db.commit()
             await self.db.refresh(config)
 
-            logger.info(f"Created default config for user {self.user.id}")
+            logger.info(f"\n\n >>Created default config for user {self.user.id}\n")
 
         return config
 
@@ -144,16 +143,17 @@ class PersonalAssistant:
             Dictionary containing response and metadata
         """
         # Debug: Log received session_id
-        logger.info(f"🔍 DEBUG: Received session_id: {repr(session_id)} (type: {type(session_id)})")
+        logger.info(f"\n\n >>🔍 DEBUG: Received session_id: {repr(session_id)} (type: {type(session_id)})\n")
+        logger.info(f"\n\n >>🔥Received Context: {context}\n")
 
         if not session_id:
             session_id = self._generate_session_id()
-            logger.info(f"🆕 DEBUG: Generated new session_id: {session_id}")
+            logger.info(f"\n\n >>🆕 DEBUG: Generated new session_id: {session_id}\n")
 
         # Debug: Log session state
-        logger.info(f"🔍 DEBUG: Checking session {session_id}")
-        logger.info(f"   📋 Current sessions in agent: {list(self._sessions.keys())}")
-        logger.info(f"   🎯 Session exists: {session_id in self._sessions}")
+        logger.info(f"\n\n >>🔍 DEBUG: Checking session {session_id}\n")
+        logger.info(f"\n\n >>   📋 Current sessions in agent: {list(self._sessions.keys())}\n")
+        logger.info(f"\n\n >>   🎯 Session exists: {session_id in self._sessions}\n")
 
         # Initialize session if new
         if session_id not in self._sessions:
@@ -161,12 +161,12 @@ class PersonalAssistant:
             memory = ConversationMemory.load_from_disk(session_id)
             if memory is None:
                 memory = ConversationMemory(session_id)
-                logger.info(f"🆕 Created NEW memory for session {session_id}")
+                logger.info(f"\n\n >>🆕 Created NEW memory for session {session_id}\n")
             else:
-                logger.info(f"💾 Loaded EXISTING memory for session {session_id}")
+                logger.info(f"\n\n >>💾 Loaded EXISTING memory for session {session_id}\n")
                 # Log what was loaded
                 context_summary = memory.get_context_summary()
-                logger.info(f"📊 Loaded memory contains: {context_summary['total_entities']} entities, {context_summary['total_tool_executions']} tool executions")
+                logger.info(f"\n\n >>📊 Loaded memory contains: {context_summary['total_entities']} entities, {context_summary['total_tool_executions']} tool executions\n")
 
             self._sessions[session_id] = {
                 "id": session_id,
@@ -176,14 +176,14 @@ class PersonalAssistant:
                 "tools_used": [],
                 "memory": memory
             }
-            logger.info(f"🎯 Initialized NEW session {session_id} for user {self.user.id}")
+            logger.info(f"\n\n >>🎯 Initialized NEW session {session_id} for user {self.user.id}\n")
         else:
-            logger.info(f"♻️  Reusing EXISTING session {session_id} for user {self.user.id}")
+            logger.info(f"\n\n >>♻️  Reusing EXISTING session {session_id} for user {self.user.id}\n")
             # Log current session state
             session = self._sessions[session_id]
             memory = session["memory"]
             context_summary = memory.get_context_summary()
-            logger.info(f"📊 Current session state: {len(session['messages'])} messages, {context_summary['total_entities']} entities, {context_summary['total_tool_executions']} tool executions")
+            logger.info(f"\n\n >>📊 Current session state: {len(session['messages'])} messages, {context_summary['total_entities']} entities, {context_summary['total_tool_executions']} tool executions\n")
 
         session = self._sessions[session_id]
 
@@ -198,17 +198,17 @@ class PersonalAssistant:
             # Log detailed context before processing
             memory = session["memory"]
             context_summary = memory.get_context_summary()
-            logger.info(f"🧠 AGENT CONTEXT BEFORE PROCESSING:")
-            logger.info(f"   📝 User Message: '{message}'")
-            logger.info(f"   🆔 Session ID: {session_id}")
-            logger.info(f"   👤 User ID: {self.user.id}")
-            logger.info(f"   📊 Memory Summary: {context_summary}")
+            logger.info(f"\n\n >>🧠 AGENT CONTEXT BEFORE PROCESSING:\n")
+            logger.info(f"\n\n >>   📝 User Message: '{message}'\n")
+            logger.info(f"\n\n >>   🆔 Session ID: {session_id}\n")
+            logger.info(f"\n\n >>   👤 User ID: {self.user.id}\n")
+            logger.info(f"\n\n >>   📊 Memory Summary: {context_summary}\n")
 
             # Log recent conversation history
             recent_messages = session["messages"][-3:]  # Last 3 messages including current
-            logger.info(f"   💬 Recent Messages ({len(recent_messages)}):")
+            logger.info(f"\n\n >>   💬 Recent Messages ({len(recent_messages)}):\n")
             for i, msg in enumerate(recent_messages):
-                logger.info(f"      {i+1}. [{msg['role']}]: {msg['content'][:100]}...")
+                logger.info(f"\n\n >>      {i+1}. [{msg['role']}]: {msg['content'][:100]}...\n")
 
             # Refresh tool registry to reflect latest OAuth status/permissions
             if self._tool_registry:
@@ -239,16 +239,16 @@ class PersonalAssistant:
 
             # Log detailed context after processing
             context_summary_after = memory.get_context_summary()
-            logger.info(f"🎯 AGENT CONTEXT AFTER PROCESSING:")
-            logger.info(f"   📤 Response: '{response[:100]}...'")
-            logger.info(f"   🔧 Tools Used: {[tool.get('name', 'unknown') for tool in tools_used]}")
-            logger.info(f"   📊 Memory Summary After: {context_summary_after}")
+            logger.info(f"\n\n >>🎯 AGENT CONTEXT AFTER PROCESSING:\n")
+            logger.info(f"\n\n >>   📤 Response: '{response[:100]}...'\n")
+            logger.info(f"\n\n >>   🔧 Tools Used: {[tool.get('name', 'unknown') for tool in tools_used]}\n")
+            logger.info(f"\n\n >>   📊 Memory Summary After: {context_summary_after}\n")
 
             # Log changes in memory
             entities_added = context_summary_after['total_entities'] - context_summary['total_entities']
             tools_executed = context_summary_after['total_tool_executions'] - context_summary['total_tool_executions']
             if entities_added > 0 or tools_executed > 0:
-                logger.info(f"   📈 Changes: +{entities_added} entities, +{tools_executed} tool executions")
+                logger.info(f"\n\n >>   📈 Changes: +{entities_added} entities, +{tools_executed} tool executions\n")
 
             # Add assistant response to session
             session["messages"].append({

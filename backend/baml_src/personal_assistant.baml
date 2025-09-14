@@ -56,15 +56,32 @@ function PersonalAssistantThinking(
     - Which tools (if any) would be most helpful?
     - Can I provide a complete answer without tools?
 
+    SPECIAL GUIDANCE FOR PLANS:
+    - If user asks to see/show/display a plan that was previously created, use the planning tool with action "get" or "list"
+    - If user asks for plan contents, use planning tool NOT virtual_fs
+    - If user wants to save a plan to a file, first get the plan using planning tool, then save to virtual_fs
+    - Plans are stored in memory and can be retrieved by ID or by searching the title
+
     IMPORTANT: When specifying tool parameters, ensure they are valid JSON objects.
     For complex parameters like event_data or time_range, provide properly structured JSON strings.
 
-    Example tool call for Google Calendar:
+    Example tool calls for Google Calendar:
+
+    Basic event:
     {
       "name": "google_calendar",
       "parameters": {
         "action": "create",
         "event_data": "{\"summary\": \"Meeting with John\", \"start\": \"2025-01-15T14:00:00Z\", \"end\": \"2025-01-15T15:00:00Z\"}"
+      }
+    }
+
+    Recurring event (daily):
+    {
+      "name": "google_calendar",
+      "parameters": {
+        "action": "create",
+        "event_data": "{\"summary\": \"Daily Standup\", \"start\": \"2025-01-15T09:00:00Z\", \"end\": \"2025-01-15T09:30:00Z\", \"recurrence\": [\"RRULE:FREQ=DAILY\"]}"
       }
     }
 
@@ -131,6 +148,10 @@ function PersonalAssistantResponse(
     3. Be conversational and friendly while remaining professional
     4. If tools were used, explain what was accomplished
     5. If there were any issues, explain them clearly and suggest alternatives
+    6. IMPORTANT: If the planning tool was used and returned a plan, include the FULL plan content in your response
+    7. For planning tool results, display the complete plan structure including all subtasks and details
+    8. PLAN EXECUTION: If user asks to execute/work on a plan, look for plan details in the system context memory section
+    9. Use the plan information from memory to provide specific guidance on next steps and current progress
 
     You MUST respond with a JSON object containing exactly these fields:
     {
