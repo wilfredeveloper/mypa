@@ -73,7 +73,14 @@ class GoogleOAuthStore:
     def read(user_access: Optional[UserToolAccess]) -> Dict[str, Any]:
         if not user_access or not user_access.config_data:
             return {}
-        return user_access.config_data.get(GoogleOAuthStore.KEY, {}) or {}
+
+        # Check both the new shared key and the legacy key for backward compatibility
+        config_data = user_access.config_data
+        google_oauth_data = config_data.get(GoogleOAuthStore.KEY, {}) or {}
+        legacy_data = config_data.get("google_calendar_oauth", {}) or {}
+
+        # Use whichever has tokens (prefer the shared key)
+        return google_oauth_data if google_oauth_data else legacy_data
 
     @staticmethod
     async def write(db: AsyncSession, user_access: UserToolAccess, data: Dict[str, Any]) -> None:

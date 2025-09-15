@@ -78,7 +78,7 @@ class PlanningTool(BaseTool):
             memory = getattr(self, 'memory', None)
 
             if memory:
-                from app.agents.personal_assistant.memory import EntityContext, EntityType
+                from app.agents.personal_assistant.tool_entity_store import EntityContext, EntityType
                 from datetime import datetime
 
                 plan_entity = EntityContext(
@@ -91,11 +91,11 @@ class PlanningTool(BaseTool):
                     source_tool="planning"
                 )
                 memory.store_entity(plan_entity)
-                logger.debug(f"Stored plan {plan['id']} in conversation memory")
+                logger.debug(f"Stored plan {plan['id']} in entity store")
             else:
-                logger.debug("No memory reference available for plan storage")
+                logger.debug("No entity store reference available for plan storage")
         except Exception as e:
-            logger.warning(f"Failed to store plan in memory: {str(e)}")
+            logger.warning(f"Failed to store plan in entity store: {str(e)}")
 
     async def execute(self, parameters: Dict[str, Any]) -> Any:
         """

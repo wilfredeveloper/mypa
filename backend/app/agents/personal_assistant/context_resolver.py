@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Optional, Tuple
 import logging
 from datetime import datetime, timezone
 
-from app.agents.personal_assistant.memory import ConversationMemory, EntityType, EntityContext
+from app.agents.personal_assistant.tool_entity_store import ToolEntityStore, EntityType, EntityContext
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +22,8 @@ class ContextResolver:
     ambiguous requests like "delete the event" or "call John".
     """
     
-    def __init__(self, memory: ConversationMemory):
-        self.memory = memory
+    def __init__(self, entity_store: ToolEntityStore):
+        self.entity_store = entity_store
     
     def resolve_calendar_event_reference(self, user_message: str, parameters: Dict[str, Any]) -> Optional[str]:
         """
@@ -41,7 +41,7 @@ class ContextResolver:
             return parameters["event_id"]
         
         # Look for recent calendar events
-        recent_events = self.memory.get_recent_entities(EntityType.CALENDAR_EVENT, limit=10)
+        recent_events = self.entity_store.get_recent_entities(EntityType.CALENDAR_EVENT, limit=10)
         if not recent_events:
             return None
         
@@ -91,7 +91,7 @@ class ContextResolver:
             Contact ID if a unique contact can be identified, None otherwise
         """
         # Look for recent contacts
-        recent_contacts = self.memory.get_recent_entities(EntityType.CONTACT, limit=10)
+        recent_contacts = self.entity_store.get_recent_entities(EntityType.CONTACT, limit=10)
         if not recent_contacts:
             return None
         
@@ -133,7 +133,7 @@ class ContextResolver:
                             enhanced_params["event_id"] = resolved_event_id
                             
                             # Add confirmation context
-                            event = self.memory.get_entity(resolved_event_id)
+                            event = self.entity_store.get_entity(resolved_event_id)
                             if event:
                                 enhanced_params["_context_info"] = {
                                     "resolved_entity": {
@@ -209,7 +209,7 @@ class ContextResolver:
             entity_id = confirmation_context.get("entity_id")
             creation_context = None
             if entity_id:
-                creation_context = self.memory.get_entity_creation_context(entity_id)
+                creation_context = self.entity_store.get_entity_creation_context(entity_id)
 
             if action == "delete":
                 if creation_context:
@@ -229,7 +229,7 @@ class ContextResolver:
     def get_tool_execution_summary(self, tool_name: Optional[str] = None,
                                  limit: int = 5) -> List[str]:
         """Get a summary of recent tool executions for context."""
-        executions = self.memory.get_recent_tool_executions(limit=limit, tool_name=tool_name)
+        executions = self.entity_store.get_recent_tool_executions(limit=limit, tool_name=tool_name)
         summaries = []
 
         for execution in executions:
@@ -242,7 +242,7 @@ class ContextResolver:
 
     def find_related_executions(self, entity_id: str) -> List[str]:
         """Find tool executions related to a specific entity."""
-        executions = self.memory.find_tool_executions_by_criteria(entity_id=entity_id)
+        executions = self.entity_store.find_tool_executions_by_criteria(entity_id=entity_id)
         summaries = []
 
         for execution in executions:
@@ -253,7 +253,7 @@ class ContextResolver:
 
     def get_execution_context_for_response(self, tool_name: str, action: str) -> Dict[str, Any]:
         """Get execution context to enhance agent responses."""
-        recent_executions = self.memory.get_recent_tool_executions(
+        recent_executions = self.entity_store.get_recent_tool_executions(
             limit=3, tool_name=tool_name, success_only=True
         )
 
@@ -271,6 +271,6 @@ class ContextResolver:
         return context
 
 
-def create_context_resolver(memory: ConversationMemory) -> ContextResolver:
+def create_context_resolver(entity_store: ToolEntityStore) -> ContextResolver:
     """Create a context resolver instance."""
-    return ContextResolver(memory)
+    return ContextResolver(entity_store)

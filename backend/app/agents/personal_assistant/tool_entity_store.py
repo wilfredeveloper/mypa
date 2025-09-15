@@ -1,9 +1,9 @@
 """
-Conversation Memory System for Personal Assistant Agent.
+Tool Entity Store System for Personal Assistant Agent.
 
-This module provides persistent conversation context management to maintain
-state across tool interactions, preventing the agent from losing context
-between user requests.
+This module provides persistent storage and management of entities extracted
+from tool executions, enabling context-aware interactions and entity resolution
+for ambiguous user references across conversation turns.
 """
 
 from typing import Dict, Any, List, Optional, Union, TypeVar, Generic
@@ -255,12 +255,119 @@ class CalendarEventExtractor(ContextExtractor):
         return entities
 
 
-class ConversationMemory:
+class GmailExtractor(ContextExtractor):
+    """Extracts email and contact entities from Gmail tool results."""
+
+    def can_extract(self, tool_name: str, result: Dict[str, Any]) -> bool:
+        """Check if this is a Gmail result with messages."""
+        if tool_name != "gmail" or not result.get("success", False):
+            return False
+
+        # The actual data is nested under "result" key
+        data = result.get("result", {})
+        return "messages" in data or "message" in data
+
+    def extract_entities(self, tool_name: str, result: Dict[str, Any]) -> List[EntityContext]:
+        """Extract email entities from Gmail results."""
+        logger.info(f"🏷️  GMAIL EXTRACTOR: Attempting to extract from {tool_name}")
+        logger.info(f"   📥 Tool result keys: {list(result.keys())}")
+
+        entities = []
+        # The actual data is nested under "result" key
+        data = result.get("result", {})
+        logger.info(f"   📊 Data keys: {list(data.keys())}")
+        now = datetime.now(timezone.utc)
+
+        # Handle single message (send/reply operations)
+        if "message" in data:
+            message = data["message"]
+            entity = EntityContext(
+                entity_id=message.get("id", ""),
+                entity_type=EntityType.EMAIL,
+                display_name=f"Email: {message.get('subject', 'No Subject')}",
+                data=message,
+                created_at=now,
+                last_accessed=now,
+                source_tool=tool_name
+            )
+            entities.append(entity)
+
+            # Extract contact from sender
+            sender = message.get("from", "")
+            if sender:
+                contact_entity = self._create_contact_entity(sender, now, tool_name)
+                if contact_entity:
+                    entities.append(contact_entity)
+
+        # Handle multiple messages (read/search operations)
+        if "messages" in data:
+            messages = data["messages"]
+            logger.info(f"   📋 Found {len(messages)} messages to extract")
+            for message in messages:
+                entity = EntityContext(
+                    entity_id=message.get("id", ""),
+                    entity_type=EntityType.EMAIL,
+                    display_name=f"Email: {message.get('subject', 'No Subject')}",
+                    data=message,
+                    created_at=now,
+                    last_accessed=now,
+                    source_tool=tool_name
+                )
+                entities.append(entity)
+                logger.info(f"   ✅ Extracted email: {entity.display_name} (ID: {entity.entity_id})")
+
+                # Extract contacts from email addresses
+                for field in ["from", "to", "cc"]:
+                    email_addresses = message.get(field, "")
+                    if email_addresses:
+                        # Handle multiple addresses separated by commas
+                        for addr in email_addresses.split(","):
+                            addr = addr.strip()
+                            if addr:
+                                contact_entity = self._create_contact_entity(addr, now, tool_name)
+                                if contact_entity:
+                                    entities.append(contact_entity)
+
+        logger.info(f"   📤 Total entities extracted: {len(entities)}")
+        return entities
+
+    def _create_contact_entity(self, email_address: str, timestamp: datetime, source_tool: str) -> Optional[EntityContext]:
+        """Create a contact entity from an email address."""
+        if not email_address or "@" not in email_address:
+            return None
+
+        # Extract name and email from formats like "John Doe <john@example.com>" or just "john@example.com"
+        import re
+        match = re.match(r'^(.+?)\s*<(.+?)>$', email_address.strip())
+        if match:
+            name = match.group(1).strip().strip('"')
+            email = match.group(2).strip()
+        else:
+            email = email_address.strip()
+            name = email.split("@")[0]  # Use part before @ as name
+
+        return EntityContext(
+            entity_id=email,  # Use email as unique ID
+            entity_type=EntityType.CONTACT,
+            display_name=f"{name} ({email})" if name != email else email,
+            data={
+                "email": email,
+                "name": name,
+                "source": "gmail"
+            },
+            created_at=timestamp,
+            last_accessed=timestamp,
+            source_tool=source_tool
+        )
+
+
+class ToolEntityStore:
     """
-    Manages conversation context and entity memory for the Personal Assistant.
-    
-    This class maintains a working context of entities that have been discussed
-    or retrieved during the conversation, enabling stateful interactions.
+    Stores and manages entities extracted from tool executions for the Personal Assistant.
+
+    This class maintains a store of entities (calendar events, emails, contacts, etc.)
+    that have been extracted from tool results, enabling context-aware interactions
+    and entity resolution for ambiguous user references.
     """
     
     def __init__(self, session_id: str, max_entities: int = 50, default_expiry_minutes: int = 60):
@@ -279,7 +386,8 @@ class ConversationMemory:
 
         # Context extractors
         self._extractors: List[ContextExtractor] = [
-            CalendarEventExtractor()
+            CalendarEventExtractor(),
+            GmailExtractor()
         ]
         
         # Memory metadata
@@ -292,7 +400,7 @@ class ConversationMemory:
         self.persistence_dir.mkdir(parents=True, exist_ok=True)
     
     def store_entity(self, entity: EntityContext) -> None:
-        """Store an entity in conversation memory."""
+        """Store an entity in the entity store."""
         # Update existing entity or add new one
         if entity.entity_id in self._entities:
             existing = self._entities[entity.entity_id]
@@ -554,7 +662,7 @@ class ConversationMemory:
         logger.debug(f"Cleaned up {entities_to_remove} old entities due to capacity limit")
     
     def get_context_summary(self) -> Dict[str, Any]:
-        """Get a summary of current conversation context."""
+        """Get a summary of current entity store contents."""
         recent_executions = self.get_recent_tool_executions(limit=5)
 
         return {
@@ -585,7 +693,7 @@ class ConversationMemory:
         }
 
     def save_to_disk(self) -> bool:
-        """Save conversation memory to disk."""
+        """Save entity store to disk."""
         if not self.persistence_enabled:
             return False
 
@@ -628,16 +736,16 @@ class ConversationMemory:
             with open(memory_file, 'wb') as f:
                 pickle.dump(memory_data, f)
 
-            logger.debug(f"Saved memory for session {self.session_id} to disk")
+            logger.debug(f"Saved entity store for session {self.session_id} to disk")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to save memory to disk: {str(e)}")
+            logger.error(f"Failed to save entity store to disk: {str(e)}")
             return False
 
     @classmethod
-    def load_from_disk(cls, session_id: str, persistence_dir: Optional[Path] = None) -> Optional['ConversationMemory']:
-        """Load conversation memory from disk."""
+    def load_from_disk(cls, session_id: str, persistence_dir: Optional[Path] = None) -> Optional['ToolEntityStore']:
+        """Load tool entity store from disk."""
         try:
             if persistence_dir is None:
                 persistence_dir = Path("data/memory")
@@ -651,7 +759,7 @@ class ConversationMemory:
                 memory_data = pickle.load(f)
 
             # Create new instance
-            memory = cls(
+            entity_store = cls(
                 session_id=memory_data["session_id"],
                 max_entities=memory_data.get("max_entities", 50),
                 default_expiry_minutes=memory_data.get("default_expiry_minutes", 60)
@@ -668,12 +776,12 @@ class ConversationMemory:
                     entity_data["entity_type"] = EntityType(entity_data["entity_type"])
 
                 entity = EntityContext(**entity_data)
-                memory._entities[eid] = entity
+                entity_store._entities[eid] = entity
 
             # Restore type index
             for et_value, ids in memory_data.get("entity_by_type", {}).items():
                 et = EntityType(et_value)
-                memory._entity_by_type[et] = ids
+                entity_store._entity_by_type[et] = ids
 
             # Restore tool executions
             for exec_id, exec_data in memory_data.get("tool_executions", {}).items():
@@ -682,21 +790,21 @@ class ConversationMemory:
                     exec_data["timestamp"] = datetime.fromisoformat(exec_data["timestamp"])
 
                 execution = ToolExecutionContext(**exec_data)
-                memory._tool_executions[exec_id] = execution
+                entity_store._tool_executions[exec_id] = execution
 
             # Restore tool execution indices
-            memory._executions_by_tool = memory_data.get("executions_by_tool", {})
-            memory._executions_chronological = memory_data.get("executions_chronological", [])
+            entity_store._executions_by_tool = memory_data.get("executions_by_tool", {})
+            entity_store._executions_chronological = memory_data.get("executions_chronological", [])
 
             # Restore metadata
-            memory.created_at = datetime.fromisoformat(memory_data.get("created_at", datetime.now(timezone.utc).isoformat()))
-            memory.last_cleanup = datetime.fromisoformat(memory_data.get("last_cleanup", datetime.now(timezone.utc).isoformat()))
+            entity_store.created_at = datetime.fromisoformat(memory_data.get("created_at", datetime.now(timezone.utc).isoformat()))
+            entity_store.last_cleanup = datetime.fromisoformat(memory_data.get("last_cleanup", datetime.now(timezone.utc).isoformat()))
 
-            logger.debug(f"Loaded memory for session {session_id} from disk")
-            return memory
+            logger.debug(f"Loaded entity store for session {session_id} from disk")
+            return entity_store
 
         except Exception as e:
-            logger.error(f"Failed to load memory from disk: {str(e)}")
+            logger.error(f"Failed to load entity store from disk: {str(e)}")
             return None
 
     def cleanup_disk_files(self, max_age_days: int = 7) -> int:

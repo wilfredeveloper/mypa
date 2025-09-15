@@ -37,7 +37,7 @@ class PAThinkNode(AsyncNode):
         tool_registry = shared.get("tool_registry")
         baml_client = shared.get("baml_client")
         ctx = shared.get("context", {}) or {}
-        memory = shared.get("memory")
+        entity_store = shared.get("entity_store")
 
         # Get conversation history
         messages = session.get("messages", [])
@@ -85,23 +85,23 @@ class PAThinkNode(AsyncNode):
                 for tool in tools
             ]
 
-        # Add memory context information
-        memory_context_prompt = ""
-        if memory:
+        # Add entity store context information
+        entity_context_prompt = ""
+        if entity_store:
             try:
                 # Cleanup expired entities
-                memory.cleanup_expired_entities()
+                entity_store.cleanup_expired_entities()
 
                 # Get recent entities for context
-                recent_entities = memory.get_recent_entities(limit=5)
-                recent_executions = memory.get_recent_tool_executions(limit=5)
+                recent_entities = entity_store.get_recent_entities(limit=5)
+                recent_executions = entity_store.get_recent_tool_executions(limit=5)
 
                 if recent_entities or recent_executions:
-                    memory_context_prompt = "\n\nConversation Memory:\n"
+                    entity_context_prompt = "\n\nTool Entity Store:\n"
 
                     # Add recent entities
                     if recent_entities:
-                        memory_context_prompt += "\nRecently discussed entities:\n"
+                        entity_context_prompt += "\nRecently discussed entities:\n"
                         for entity in recent_entities:
                             entity_info = f"- {entity.entity_type.value}: {entity.display_name}"
                             if entity.entity_type.name == "CALENDAR_EVENT":
@@ -131,11 +131,11 @@ class PAThinkNode(AsyncNode):
                                         entity_info += f"\n  - Progress: {completion}% complete"
 
                             entity_info += f" [ID: {entity.entity_id}]"
-                            memory_context_prompt += entity_info + "\n"
+                            entity_context_prompt += entity_info + "\n"
 
                     # Add recent tool executions
                     if recent_executions:
-                        memory_context_prompt += "\nRecent tool executions:\n"
+                        entity_context_prompt += "\nRecent tool executions:\n"
                         for execution in recent_executions:
                             exec_info = f"- {execution.get_summary()}"
                             if execution.user_request:
@@ -153,9 +153,9 @@ class PAThinkNode(AsyncNode):
                                         if 'subtasks' in plan:
                                             exec_info += f" with {len(plan['subtasks'])} subtasks"
 
-                            memory_context_prompt += exec_info + "\n"
+                            entity_context_prompt += exec_info + "\n"
 
-                    memory_context_prompt += (
+                    entity_context_prompt += (
                         "\nGuidance: When users refer to entities ambiguously (e.g., 'delete the event', "
                         "'call John', 'execute the plan'), check if they match any recently discussed entities above. "
                         "Use the entity ID for operations when you can identify the correct entity. "
@@ -164,10 +164,10 @@ class PAThinkNode(AsyncNode):
                         "You can also reference previous tool executions to provide context-aware responses."
                     )
             except Exception as e:
-                logger.warning(f"Failed to build memory context: {str(e)}")
+                logger.warning(f"Failed to build entity context: {str(e)}")
 
         base_system_prompt = config.system_prompt if config else ""
-        system_prompt = base_system_prompt + time_context_prompt + memory_context_prompt
+        system_prompt = base_system_prompt + time_context_prompt + entity_context_prompt
 
         return {
             "user_message": user_message,
@@ -346,14 +346,14 @@ class PAToolCallNode(AsyncNode):
         tools_to_use = shared.get("tools_to_use", [])
         tool_registry = shared.get("tool_registry")
         user_message = shared.get("user_message", "")
-        memory = shared.get("memory")
+        entity_store = shared.get("entity_store")
         session_id = shared.get("session_id")
 
         return {
             "tools_to_use": tools_to_use,
             "tool_registry": tool_registry,
             "user_message": user_message,
-            "memory": memory,
+            "entity_store": entity_store,
             "session_id": session_id
         }
 
@@ -362,16 +362,16 @@ class PAToolCallNode(AsyncNode):
         tools_to_use = prep_res["tools_to_use"]
         tool_registry = prep_res["tool_registry"]
         user_message = prep_res["user_message"]
-        memory = prep_res.get("memory")
+        entity_store = prep_res.get("entity_store")
         session_id = prep_res.get("session_id")
 
         if not tool_registry:
             return {"error": "Tool registry not available"}
 
-        # Create context resolver if memory is available
+        # Create context resolver if entity store is available
         context_resolver = None
-        if memory:
-            context_resolver = create_context_resolver(memory)
+        if entity_store:
+            context_resolver = create_context_resolver(entity_store)
 
         tool_results = []
 
@@ -410,14 +410,14 @@ class PAToolCallNode(AsyncNode):
                         except Exception as e:
                             logger.warning(f"Failed to set context on tool {tool_name}: {str(e)}")
 
-                # Set memory and session context for planning tool
+                # Set entity store and session context for planning tool
                 if tool_name == "planning" and hasattr(tool_registry, '_tool_instances'):
                     tool_instance = tool_registry._tool_instances.get(tool_name)
                     if tool_instance:
-                        # Set memory reference
-                        if memory and hasattr(tool_instance, 'set_memory'):
-                            tool_instance.set_memory(memory)
-                            logger.debug(f"Set memory reference on planning tool")
+                        # Set entity store reference
+                        if entity_store and hasattr(tool_instance, 'set_memory'):
+                            tool_instance.set_memory(entity_store)
+                            logger.debug(f"Set entity store reference on planning tool")
 
                         # Set session context
                         if session_id and hasattr(tool_instance, 'set_session_context'):
@@ -481,11 +481,11 @@ class PAToolCallNode(AsyncNode):
             shared["tools_used"] = []
         shared["tools_used"].extend(tool_results)
 
-        # Process tool results for conversation memory
-        memory = shared.get("memory")
+        # Process tool results for entity store
+        entity_store = shared.get("entity_store")
         user_message = shared.get("user_message", "")
 
-        if memory:
+        if entity_store:
             for tool_result in tool_results:
                 tool_name = tool_result.get("tool", "")
                 parameters = tool_result.get("parameters", {})
@@ -510,7 +510,7 @@ class PAToolCallNode(AsyncNode):
                     if error_message:
                         logger.info(f"   ❌ Error: {error_message}")
 
-                    execution_context = memory.process_tool_execution(
+                    execution_context = entity_store.process_tool_execution(
                         tool_name=tool_name,
                         user_request=user_message,
                         parameters=parameters,
@@ -527,7 +527,7 @@ class PAToolCallNode(AsyncNode):
                         logger.info(f"   📋 Entity IDs: {execution_context.extracted_entity_ids}")
 
                 except Exception as e:
-                    logger.warning(f"Failed to process tool execution for memory: {str(e)}")
+                    logger.warning(f"Failed to process tool execution for entity store: {str(e)}")
 
         # Save for response generation
         shared["current_tool_results"] = tool_results

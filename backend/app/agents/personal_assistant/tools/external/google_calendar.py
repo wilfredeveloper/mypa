@@ -48,7 +48,15 @@ class GoogleCalendarTool(ExternalTool):
         try:
             if not self.user_access or not self.user_access.is_authorized:
                 return False
-            cfg = (self.user_access.config_data or {}).get("google_oauth", {})
+
+            # Check both the new shared key and the legacy key for backward compatibility
+            config_data = self.user_access.config_data or {}
+            google_oauth_cfg = config_data.get("google_oauth", {})
+            legacy_cfg = config_data.get("google_calendar_oauth", {})
+
+            # Use whichever has tokens (prefer the shared key)
+            cfg = google_oauth_cfg if google_oauth_cfg else legacy_cfg
+
             # Accept either refresh_token or current access token
             return bool(cfg.get("refresh_token") or cfg.get("token"))
         except Exception:

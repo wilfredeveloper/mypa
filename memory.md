@@ -1,8 +1,8 @@
-# Memory System Architecture Analysis for Personal Assistant Agent
+# Tool Entity Store Architecture Analysis for Personal Assistant Agent
 
 ## 1. Module Overview
 
-The memory system is implemented in `backend/app/agents/personal_assistant/memory.py` and serves as the core component for maintaining conversation context and entity state across user interactions.
+The tool entity store system is implemented in `backend/app/agents/personal_assistant/tool_entity_store.py` and serves as the core component for storing and managing entities extracted from tool executions, enabling context-aware interactions across user sessions.
 
 ### Core Classes and Data Structures
 
@@ -21,10 +21,10 @@ class EntityType(Enum):
 
 **Key Components:**
 
-1. **EntityContext**: Stores detailed information about entities (events, contacts, etc.) with metadata like access patterns and user references
+1. **EntityContext**: Stores detailed information about entities (events, contacts, emails, etc.) with metadata like access patterns and user references
 2. **ToolExecutionContext**: Captures comprehensive metadata about tool executions including parameters, results, and extracted entities
-3. **ConversationMemory**: Main orchestrator managing entity storage, tool execution history, and persistence
-4. **ContextExtractor**: Abstract base for extracting entities from tool results (currently implements CalendarEventExtractor)
+3. **ToolEntityStore**: Main orchestrator managing entity storage, tool execution history, and persistence
+4. **ContextExtractor**: Abstract base for extracting entities from tool results (implements CalendarEventExtractor and GmailExtractor)
 5. **ContextResolver**: Resolves ambiguous user references to stored entities
 
 ### Memory Storage Architecture
@@ -49,13 +49,13 @@ The memory system integrates deeply with the Personal Assistant agent through se
 
 **Session Initialization:**
 ```python
-# Try to load existing memory from disk
-memory = ConversationMemory.load_from_disk(session_id)
-if memory is None:
-    memory = ConversationMemory(session_id)
-    logger.info(f"🆕 Created NEW memory for session {session_id}")
+# Try to load existing entity store from disk
+entity_store = ToolEntityStore.load_from_disk(session_id)
+if entity_store is None:
+    entity_store = ToolEntityStore(session_id)
+    logger.info(f"🆕 Created NEW entity store for session {session_id}")
 else:
-    logger.info(f"💾 Loaded EXISTING memory for session {session_id}")
+    logger.info(f"💾 Loaded EXISTING entity store for session {session_id}")
 ```
 
 **Context Injection in Workflow:**
