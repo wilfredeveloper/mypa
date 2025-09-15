@@ -6,6 +6,7 @@ in the personal assistant system.
 """
 
 from .google_calendar import GOOGLE_CALENDAR_SCHEMA
+from .gmail import GMAIL_SCHEMA
 from .builtin_tools import (
     SYSTEM_PROMPT_SCHEMA,
     PLANNING_SCHEMA,
@@ -15,6 +16,7 @@ from .builtin_tools import (
 
 __all__ = [
     "GOOGLE_CALENDAR_SCHEMA",
+    "GMAIL_SCHEMA",
     "SYSTEM_PROMPT_SCHEMA",
     "PLANNING_SCHEMA",
     "VIRTUAL_FS_SCHEMA",

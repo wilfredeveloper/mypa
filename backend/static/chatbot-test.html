@@ -21,7 +21,7 @@
       --radius: 16px;
     }
     [data-theme="dark"] {
-      --bg: #0C0C0C;               /* requested dark bg */
+      --bg: #0C0C0C;
       --card: #101012;
       --text: #ECEDEE;
       --subtext: #9aa0a6;
@@ -36,34 +36,39 @@
     }
 
     * { box-sizing: border-box }
-    html, body { height: 100% }
+    html {
+      height: 100%;
+      scroll-behavior: smooth;
+    }
     body {
+      height: 100%;
       margin: 0;
+      padding: 0;
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans";
       color: var(--text);
       background: radial-gradient(1200px 800px at 80% -100px, rgba(34,211,238,.07), transparent 60%), var(--bg);
     }
-    .app { display: grid; grid-template-rows: auto 1fr; height: 100% }
+    .app { display: grid; grid-template-rows: auto 1fr; height: 100vh; }
 
-    /* ----- Header (minimal) ----- */
+    /* ----- Header (decluttered) ----- */
     .header { position: sticky; top: 0; z-index: 20; backdrop-filter: saturate(120%) blur(6px); background: color-mix(in oklab, var(--bg) 86%, transparent); border-bottom: 1px solid var(--ring) }
     .bar { max-width: 1400px; margin: 0 auto; padding: 12px 20px; display:flex; align-items:center; gap:12px }
     .brand { display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.2px }
     .dot { width:10px; height:10px; border-radius:999px; background:var(--accent); box-shadow:0 0 0 6px color-mix(in oklab, var(--accent) 18%, transparent) }
     .spacer { flex:1 }
 
-    .btn { appearance:none; border:1px solid var(--ring); background:var(--card); color:var(--text); padding:9px 12px; border-radius:10px; cursor:pointer; transition:.2s ease; font-weight:600 }
+    .btn { appearance:none; border:1px solid var(--ring); background:var(--card); color:var(--text); padding:9px 12px; border-radius:10px; cursor:pointer; transition:.2s ease; font-weight:600; display: inline-flex; align-items: center; justify-content: center; }
     .btn:hover { transform: translateY(-1px); box-shadow: var(--shadow) }
-    .btn.ghost { background:transparent }
+    .btn.ghost { background:transparent; border-color: transparent; }
     .btn.danger { background: color-mix(in oklab, var(--danger) 10%, var(--card)); border-color: color-mix(in oklab, var(--danger) 40%, var(--ring)) }
     .badge { display:inline-flex; align-items:center; gap:8px; font-size:12px; padding:5px 9px; border-radius:999px; border:1px solid var(--ring); background:var(--card) }
     .dot-sm { width:6px; height:6px; border-radius:999px; background: var(--subtext) }
     .ok { background: var(--success) }
     .warn { background: var(--warn) }
 
-    /* Shell is now full-width */
-    .shell { max-width: 100%; margin: 18px auto; padding: 0 16px; display:grid; grid-template-columns: 1fr; gap: 16px }
-    .card {  }
+    /* Layout: Shell is full-width for chat, but centered for landing */
+    .shell { max-width: 1400px; margin: 18px auto; padding: 0 16px; display:grid; grid-template-columns: 1fr; gap: 16px }
+    #chat.shell { max-width: 100%; margin: 0; padding: 0; height: 100%; }
 
     /* Landing */
     .landing { display:grid; place-items:center; min-height: calc(100vh - 120px); text-align:center; padding: 40px }
@@ -74,32 +79,57 @@
     .search input { flex:1; border:0; outline:0; background:transparent; color: var(--text); font-size: 15px; padding:6px 6px }
     .search .send { border-radius:999px; height:42px; aspect-ratio:1; display:grid; place-items:center }
 
-    /* Chat (full-bleed center) */
-    .chat-wrap { display:grid; grid-template-rows: 1fr auto; height: calc(100vh - 120px); overflow: hidden }
-    .messages { padding: 24px 0; overflow:auto }
+    /* Chat Layout (full-bleed with centered content) */
+    .chat-wrap { display: flex; flex-direction: column; height: 100%; }
+    .messages {
+      flex: 1;
+      padding: 24px 0 120px 0;
+      overflow-y: auto;
+      scroll-behavior: smooth;
+    }
     .msg-center { width:min(1100px, 96vw); margin:0 auto }
     .row { display:flex; gap: 10px; margin-bottom: 14px; align-items:flex-end }
     .row.user { flex-direction: row-reverse }
-    .avatar { width: 34px; height:34px; border-radius:999px; display:grid; place-items:center; font-weight:700; background: color-mix(in oklab, var(--accent) 16%, var(--card)); border: 1px solid var(--ring) }
-    .bubble { max-width: 100%; padding: 12px 14px; border-radius: 18px; border:1px solid var(--ring); line-height: 1.55; font-size: 15px; position: relative }
+    .avatar { width: 34px; height:34px; border-radius:999px; display:grid; place-items:center; font-weight:700; background: color-mix(in oklab, var(--accent) 16%, var(--card)); border: 1px solid var(--ring); flex-shrink: 0; }
+    .bubble { max-width: 85ch; padding: 12px 16px; border-radius: 18px; border:1px solid var(--ring); line-height: 1.55; font-size: 15px; position: relative; overflow-wrap: break-word; word-wrap: break-word; word-break: break-word; white-space: normal; }
     .bubble.user { background: var(--bubble-user); border-bottom-right-radius: 6px }
     .bubble.assistant { background: var(--bubble-assistant); border-bottom-left-radius: 6px }
     .meta { color: var(--subtext); font-size: 11px; margin-top: 6px }
 
-    /* Markdown */
+    /* Markdown Content Wrapping */
     .bubble :is(h1,h2,h3) { margin:.4em 0 .2em }
-    .bubble pre { background: color-mix(in oklab, var(--bg) 70%, var(--card)); border: 1px dashed var(--ring); padding: 12px; border-radius: 12px; overflow:auto }
+    .bubble pre { background: color-mix(in oklab, var(--bg) 70%, var(--card)); border: 1px dashed var(--ring); padding: 12px; border-radius: 12px; overflow:auto; white-space: pre-wrap; word-break: break-all; }
     .bubble code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: .92em }
+    .bubble code:not(pre code) { word-break: break-all; }
 
-    /* Composer */
-    .composer { border-top: 1px solid var(--ring); padding: 12px; display:flex; gap:10px; align-items:flex-end; background: color-mix(in oklab, var(--bg) 60%, transparent) }
+    /* Composer Improvements - Fixed to bottom */
+    .composer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      border-top: 1px solid var(--ring);
+      padding: 12px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+      background: color-mix(in oklab, var(--bg) 90%, transparent);
+      backdrop-filter: blur(12px);
+      z-index: 10;
+    }
     .composer .inner { width:min(1100px,96vw); margin:0 auto; display:flex; gap:10px; align-items:flex-end }
-    .composer textarea { flex:1; resize:none; min-height:54px; max-height:180px; padding:12px 14px; border-radius:12px; border:1px solid var(--ring); outline:0; background:var(--card); color:var(--text) }
+    .composer textarea { flex:1; resize:none; min-height:58px; max-height:250px; padding:16px 18px; border-radius:16px; border:1px solid var(--ring); outline:0; background:var(--card); color:var(--text); font-size: 16px; }
+    .composer .btn { height: 58px; width: 58px; padding: 0; border-radius: 16px; }
+    .composer .btn.ghost { width: auto; height: auto; padding: 9px 12px; border-radius: 10px; }
 
-    /* Floating utility bar (clutter tucked away) */
-    .fab-bar { position: fixed; bottom: 18px; right: 18px; display:flex; gap:10px; z-index: 30 }
+    /* Typing Indicator */
+    .typing-indicator .dot-flashing { position: relative; width: 8px; height: 8px; border-radius: 5px; background-color: var(--subtext); color: var(--subtext); animation: dotFlashing 1s infinite linear alternate; animation-delay: .5s; margin: 10px; }
+    .typing-indicator .dot-flashing::before, .typing-indicator .dot-flashing::after { content: ''; display: inline-block; position: absolute; top: 0; }
+    .typing-indicator .dot-flashing::before { left: -15px; width: 8px; height: 8px; border-radius: 5px; background-color: var(--subtext); color: var(--subtext); animation: dotFlashing 1s infinite alternate; animation-delay: 0s; }
+    .typing-indicator .dot-flashing::after { left: 15px; width: 8px; height: 8px; border-radius: 5px; background-color: var(--subtext); color: var(--subtext); animation: dotFlashing 1s infinite alternate; animation-delay: 1s; }
+    @keyframes dotFlashing { 0% { background-color: var(--subtext); } 50%, 100% { background-color: color-mix(in oklab, var(--subtext) 40%, transparent); } }
 
-    /* Modals */
+    /* Modals (unchanged) */
     .modal { position: fixed; inset:0; display:none; align-items:center; justify-content:center; background: rgba(0,0,0,.48); z-index: 40; }
     .modal.show { display:flex; flex-direction: column; }
     .modal-card { background: var(--card); width:min(840px,94vw); border:1px solid var(--ring); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden }
@@ -107,73 +137,16 @@
     .modal-body { padding:16px; display:flex; flex-direction: column; gap:14px }
 
     /* Login Modal - Column Layout */
-    .login-modal-card {
-      background: var(--card);
-      width: min(480px, 94vw);
-      border: 1px solid var(--ring);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-    .login-modal-body {
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-    .login-form {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-    .login-input {
-      width: 100%;
-      padding: 12px 16px;
-      border: 1px solid var(--ring);
-      border-radius: 12px;
-      background: var(--card);
-      color: var(--text);
-      font-size: 15px;
-      outline: 0;
-      transition: border-color 0.2s ease;
-    }
-    .login-input:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 15%, transparent);
-    }
-    .login-actions {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-    .login-btn {
-      width: 100%;
-      padding: 14px 20px;
-      border: 1px solid var(--ring);
-      border-radius: 12px;
-      background: var(--card);
-      color: var(--text);
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-    .login-btn:hover {
-      transform: translateY(-1px);
-      box-shadow: var(--shadow);
-    }
-    .login-btn.primary {
-      background: var(--accent);
-      color: white;
-      border-color: var(--accent);
-    }
-    .login-btn.danger {
-      background: color-mix(in oklab, var(--danger) 10%, var(--card));
-      border-color: color-mix(in oklab, var(--danger) 40%, var(--ring));
-      color: var(--danger);
-    }
+    .login-modal-card { background: var(--card); width: min(480px, 94vw); border: 1px solid var(--ring); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; }
+    .login-modal-body { padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+    .login-form { display: flex; flex-direction: column; gap: 16px; }
+    .login-input { width: 100%; padding: 12px 16px; border: 1px solid var(--ring); border-radius: 12px; background: var(--card); color: var(--text); font-size: 15px; outline: 0; transition: border-color 0.2s ease; }
+    .login-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 15%, transparent); }
+    .login-actions { display: flex; flex-direction: column; gap: 12px; }
+    .login-btn { width: 100%; padding: 14px 20px; border: 1px solid var(--ring); border-radius: 12px; background: var(--card); color: var(--text); font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
+    .login-btn:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
+    .login-btn.primary { background: var(--accent); color: white; border-color: var(--accent); }
+    .login-btn.danger { background: color-mix(in oklab, var(--danger) 10%, var(--card)); border-color: color-mix(in oklab, var(--danger) 40%, var(--ring)); color: var(--danger); }
 
     /* Tabs inside modal */
     .tabs { display:flex; gap:8px; border-bottom:1px solid var(--ring); padding-bottom:8px }
@@ -222,15 +195,20 @@
     <!-- Header -->
     <header class="header">
       <div class="bar">
-        <div class="brand"><span class="dot"></span> Agent Test Console</div>
+        <div class="brand"><span class="dot"></span> Agent Console</div>
         <div class="spacer"></div>
         <div class="badge" id="conn-badge"><span class="dot-sm"></span> Idle</div>
         <div class="badge" id="auth-badge"><span class="dot-sm warn"></span> Not logged in</div>
-        <button class="btn" id="gc-btn">Connect Google Calendar</button>
-        <button class="btn ghost" id="theme-btn" title="Toggle theme">Theme</button>
+        <button class="btn ghost" id="theme-btn" title="Toggle theme">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+        </button>
         <button class="btn" id="sessions-btn" title="Session Management">Sessions</button>
-        <button class="btn" id="debug-btn" title="Agent State Inspector (Ctrl+D)">🔍 Debug</button>
-        <button class="btn" id="center-btn" title="Control Center">Control Center</button>
+        <button class="btn" id="debug-btn" title="Agent State Inspector (Ctrl+D)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M12 4h9"/><path d="M4 20h5"/><path d="M4 4h5"/><path d="M12 12h7"/><path d="M4 12h3"/><circle cx="12" cy="12" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="18" cy="12" r="2"/></svg>
+        </button>
+        <button class="btn" id="center-btn" title="Control Center">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 0 2l-.15.08a2 2 0 0 1-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1 0-2l.15-.08a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
         <button class="btn danger" id="logout-btn" style="display:none">Logout</button>
         <button class="btn" id="login-btn" style="display:none">Login</button>
       </div>
@@ -246,7 +224,9 @@
           </div>
           <div class="search">
             <input id="landing-input" placeholder="Ask anything" />
-            <button class="btn send" id="landing-send">▶</button>
+            <button class="btn send" id="landing-send">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            </button>
           </div>
           <div class="subtitle" id="landing-auth-cta">No account? <button class="btn" id="open-auth">Create account / Login</button></div>
         </div>
@@ -255,26 +235,23 @@
 
     <!-- Chat -->
     <main class="shell" id="chat" style="display:none">
-      <section class="card chat-wrap" aria-label="Chat">
+      <section class="chat-wrap" aria-label="Chat">
         <div class="messages">
           <div class="msg-center" id="messages"></div>
         </div>
         <div class="composer">
           <div class="inner">
-            <textarea id="composer" placeholder="Type your message. Enter to send · Shift+Enter = newline"></textarea>
-            <button class="btn" id="send">Send</button>
-            <button class="btn ghost" id="new-session" title="Start New Conversation">New</button>
-            <button class="btn ghost" id="clear" title="Clear chat">Clear</button>
+            <button class="btn ghost" id="new-session" title="Start New Conversation">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
+            <textarea id="composer" placeholder="Ask anything..."></textarea>
+            <button class="btn" id="send" title="Send message">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            </button>
           </div>
         </div>
       </section>
     </main>
-
-    <!-- Floating controls -->
-    <div class="fab-bar">
-      <div class="badge" id="typing" style="display:none"><span class="dot-sm"></span> Assistant is typing…</div>
-      <div class="badge"><span class="dot-sm"></span> <span id="char-count">0</span> chars</div>
-    </div>
 
     <!-- Settings Modal (kept) -->
     <div class="modal" id="settings-modal" role="dialog" aria-modal="true">
@@ -306,10 +283,24 @@
           </div>
 
           <div id="tab-google" class="tabpanel show">
-            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
-              <div class="badge" id="gc-badge"><span class="dot-sm warn"></span> Not Authorized</div>
-              <button class="btn" id="gc-connect">Authorize</button>
-              <button class="btn danger" id="gc-revoke">Disconnect</button>
+            <div style="margin-bottom: 20px;">
+              <h3 style="margin: 0 0 10px 0; color: var(--accent);">Google Calendar</h3>
+              <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+                <div class="badge" id="gc-badge"><span class="dot-sm warn"></span> Not Authorized</div>
+                <button class="btn" id="gc-connect">Authorize</button>
+                <button class="btn danger" id="gc-revoke">Disconnect</button>
+              </div>
+            </div>
+            <div>
+              <h3 style="margin: 0 0 10px 0; color: var(--accent);">Gmail</h3>
+              <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+                <div class="badge" id="gmail-badge"><span class="dot-sm warn"></span> Not Authorized</div>
+                <button class="btn" id="gmail-connect">Authorize</button>
+                <button class="btn danger" id="gmail-revoke">Disconnect</button>
+              </div>
+              <p style="font-size: 13px; color: var(--subtext); margin: 8px 0 0 0;">
+                Gmail and Calendar share the same Google authorization. Authorizing one will enable both services.
+              </p>
             </div>
           </div>
 
@@ -494,13 +485,66 @@
       const meta = document.createElement('div'); meta.className = 'meta'; meta.textContent = time();
       wrap.appendChild(bubble); wrap.appendChild(meta);
       row.appendChild(av); row.appendChild(wrap);
-      list.appendChild(row); list.parentElement.parentElement.scrollTop = list.parentElement.parentElement.scrollHeight;
+      list.appendChild(row);
+      const messagesView = document.querySelector('.messages');
+      messagesView.scrollTop = messagesView.scrollHeight;
+      if (role === 'assistant') {
+        el('composer').focus();
+      }
     }
 
     // Streaming draft
-    let draftEl = null; function showDraft(){ if(draftEl) return; const list=el('messages'); const row=document.createElement('div'); row.className='row assistant'; const av=document.createElement('div'); av.className='avatar'; av.textContent='A'; const wrap=document.createElement('div'); draftEl=document.createElement('div'); draftEl.className='bubble assistant'; wrap.appendChild(draftEl); const m=document.createElement('div'); m.className='meta'; m.textContent=time(); wrap.appendChild(m); row.appendChild(av); row.appendChild(wrap); list.appendChild(row) }
-    function updateDraft(txt){ showDraft(); renderMarkdown(draftEl, txt||'') }
-    function finalizeDraft(){ draftEl=null }
+    let draftEl = null;
+    function showDraft(){
+      if(draftEl) return;
+      const list=el('messages');
+      const row=document.createElement('div'); row.className='row assistant';
+      const av=document.createElement('div'); av.className='avatar'; av.textContent='A';
+      const wrap=document.createElement('div');
+      draftEl=document.createElement('div'); draftEl.className='bubble assistant';
+      wrap.appendChild(draftEl);
+      const m=document.createElement('div'); m.className='meta'; m.textContent=time();
+      wrap.appendChild(m);
+      row.appendChild(av);
+      row.appendChild(wrap);
+      list.appendChild(row);
+    }
+    function updateDraft(txt){
+      showDraft();
+      renderMarkdown(draftEl, txt||'');
+      const messagesView = document.querySelector('.messages');
+      messagesView.scrollTop = messagesView.scrollHeight;
+    }
+    function finalizeDraft(){
+      draftEl=null;
+      el('composer').focus();
+    }
+
+    // Typing Indicator
+    function showTypingIndicator() {
+      if (document.getElementById('typing-indicator')) return;
+      const list = el('messages');
+      const row = document.createElement('div');
+      row.className = 'row assistant';
+      row.id = 'typing-indicator';
+      const av = document.createElement('div');
+      av.className = 'avatar';
+      av.textContent = 'A';
+      const wrap = document.createElement('div');
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble assistant typing-indicator';
+      bubble.innerHTML = '<div class="dot-flashing"></div>';
+      wrap.appendChild(bubble);
+      row.appendChild(av);
+      row.appendChild(wrap);
+      list.appendChild(row);
+      const messagesView = document.querySelector('.messages');
+      messagesView.scrollTop = messagesView.scrollHeight;
+    }
+    function removeTypingIndicator() {
+      const indicator = document.getElementById('typing-indicator');
+      if (indicator) indicator.remove();
+    }
 
     // ---------- UI State ----------
     function setAuthUI(){
@@ -517,9 +561,25 @@
 
     // ---------- Google ----------
     function setGCStatus(ok){ setBadge(el('gc-badge'), ok?'Authorized':'Not Authorized', ok?'ok':'warn'); el('gc-connect').disabled = !accessToken || ok; el('gc-revoke').disabled = !accessToken || !ok }
-    async function googleStatus(){ if(!accessToken) return setGCStatus(false); try{ const res=await fetch(`${GOOG_BASE}/oauth/status`,{headers:{...authHeader()}}); if(res.status===401 && await tryRefresh()) return googleStatus(); const data=await res.json(); setGCStatus(!!data.authorized) } catch { setGCStatus(false) } }
+    function setGmailStatus(ok){ setBadge(el('gmail-badge'), ok?'Authorized':'Not Authorized', ok?'ok':'warn'); el('gmail-connect').disabled = !accessToken || ok; el('gmail-revoke').disabled = !accessToken || !ok }
+
+    async function googleStatus(){
+      if(!accessToken) { setGCStatus(false); setGmailStatus(false); return; }
+      try{
+        const res=await fetch(`${GOOG_BASE}/oauth/status`,{headers:{...authHeader()}});
+        if(res.status===401 && await tryRefresh()) return googleStatus();
+        const data=await res.json();
+        const authorized = !!data.authorized;
+        setGCStatus(authorized);
+        setGmailStatus(authorized);
+      } catch { setGCStatus(false); setGmailStatus(false); }
+    }
+
     async function googleAuthorize(){ if(!accessToken) return openAuthModal(); const res=await fetch(`${GOOG_BASE}/oauth/start`,{headers:{...authHeader()}}); if(res.status===401 && await tryRefresh()) return googleAuthorize(); const data=await res.json(); if(!data.authorization_url) return alert('No authorization URL'); location.href=data.authorization_url }
-    async function googleRevoke(){ if(!accessToken) return; const res=await fetch(`${GOOG_BASE}/oauth/revoke`,{method:'POST',headers:{...authHeader()}}); if(res.status===401 && await tryRefresh()) return googleRevoke(); await googleStatus(); alert('Google Calendar access revoked') }
+    async function gmailAuthorize(){ return googleAuthorize(); }
+
+    async function googleRevoke(){ if(!accessToken) return; const res=await fetch(`${GOOG_BASE}/oauth/revoke`,{method:'POST',headers:{...authHeader()}}); if(res.status===401 && await tryRefresh()) return googleRevoke(); await googleStatus(); alert('Google services access revoked (Calendar & Gmail)') }
+    async function gmailRevoke(){ return googleRevoke(); }
 
     // ---------- Health ----------
     async function healthCheck(){ const out=el('health-out'); out.textContent='Checking…'; try{ const res=await fetch(`${API_BASE}/health`); const data=await res.json(); out.textContent=JSON.stringify(data,null,2) }catch(e){ out.textContent=e.message }}
@@ -530,11 +590,7 @@
       const password = el('login-password').value;
       const body = new URLSearchParams({ username: email, password });
       try{
-        const res = await fetch(`${AUTH_BASE}/login`, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-          body
-        });
+        const res = await fetch(`${AUTH_BASE}/login`, { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body });
         const data = await res.json();
         if(!res.ok) throw new Error(data?.detail || 'Login failed');
         setTokens(data.access_token, data.refresh_token);
@@ -551,24 +607,16 @@
     async function createNewSession(){
       if(!accessToken) return openAuthModal();
       try{
-        const res = await fetch(`${API_BASE}/sessions/new`, {
-          method: 'POST',
-          headers: { ...authHeader() }
-        });
+        const res = await fetch(`${API_BASE}/sessions/new`, { method: 'POST', headers: { ...authHeader() } });
         if(res.status === 401 && await tryRefresh()) return createNewSession();
         const data = await res.json();
         if(!res.ok) throw new Error(data?.detail || 'Failed to create session');
-
-        // Switch to new session
         sessionId = data.session_id;
         localStorage.setItem('pa_session_id', sessionId);
         conversationHistory = [];
         clearChat();
-
-        // Update UI
         setBadge(el('conn-badge'), `New session: ${sessionId.slice(0,8)}...`, 'ok');
         setTimeout(() => setBadge(el('conn-badge'), 'Idle'), 2000);
-
         return data;
       } catch(e){
         alert('Failed to create new session: ' + e.message);
@@ -578,9 +626,7 @@
     async function loadUserSessions(){
       if(!accessToken) return [];
       try{
-        const res = await fetch(`${API_BASE}/sessions?limit=20`, {
-          headers: { ...authHeader() }
-        });
+        const res = await fetch(`${API_BASE}/sessions?limit=20`, { headers: { ...authHeader() } });
         if(res.status === 401 && await tryRefresh()) return loadUserSessions();
         const data = await res.json();
         if(!res.ok) throw new Error(data?.detail || 'Failed to load sessions');
@@ -594,9 +640,7 @@
     async function loadSessionMessages(sessionId){
       if(!accessToken || !sessionId) return [];
       try{
-        const res = await fetch(`${API_BASE}/sessions/${sessionId}/messages`, {
-          headers: { ...authHeader() }
-        });
+        const res = await fetch(`${API_BASE}/sessions/${sessionId}/messages`, { headers: { ...authHeader() } });
         if(res.status === 401 && await tryRefresh()) return loadSessionMessages(sessionId);
         const data = await res.json();
         if(!res.ok) throw new Error(data?.detail || 'Failed to load messages');
@@ -609,28 +653,14 @@
 
     async function switchToSession(newSessionId){
       if(newSessionId === sessionId) return;
-
       sessionId = newSessionId;
       localStorage.setItem('pa_session_id', sessionId);
-
-      // Load session messages and rebuild conversation history
       const messages = await loadSessionMessages(sessionId);
-      conversationHistory = messages.map(msg => ({
-        role: msg.role,
-        content: msg.content
-      }));
-
-      // Clear and rebuild chat UI
+      conversationHistory = messages.map(msg => ({ role: msg.role, content: msg.content }));
       clearChat();
-      messages.forEach(msg => {
-        appendMessage(msg.role, msg.content);
-      });
-
-      // Update connection badge
+      messages.forEach(msg => { appendMessage(msg.role, msg.content); });
       setBadge(el('conn-badge'), `Session: ${sessionId.slice(0,8)}...`, 'ok');
       setTimeout(() => setBadge(el('conn-badge'), 'Idle'), 2000);
-
-      // Switch to chat view if not already there
       if (el('landing').style.display !== 'none') {
         el('landing').style.display = 'none';
         el('chat').style.display = 'grid';
@@ -640,21 +670,11 @@
     async function deleteSession(sessionIdToDelete){
       if(!accessToken || !sessionIdToDelete) return;
       if(!confirm('Are you sure you want to delete this session? This cannot be undone.')) return;
-
       try{
-        const res = await fetch(`${API_BASE}/sessions/${sessionIdToDelete}`, {
-          method: 'DELETE',
-          headers: { ...authHeader() }
-        });
+        const res = await fetch(`${API_BASE}/sessions/${sessionIdToDelete}`, { method: 'DELETE', headers: { ...authHeader() } });
         if(res.status === 401 && await tryRefresh()) return deleteSession(sessionIdToDelete);
         if(!res.ok) throw new Error('Failed to delete session');
-
-        // If we deleted the current session, create a new one
-        if(sessionIdToDelete === sessionId){
-          await createNewSession();
-        }
-
-        // Refresh session list
+        if(sessionIdToDelete === sessionId){ await createNewSession(); }
         await renderSessionList();
       } catch(e){
         alert('Failed to delete session: ' + e.message);
@@ -664,25 +684,20 @@
     async function renderSessionList(){
       const sessionList = el('session-list');
       sessionList.innerHTML = '<div style="text-align: center; color: var(--subtext); padding: 20px;">Loading sessions...</div>';
-
       const sessions = await loadUserSessions();
-
       if(sessions.length === 0){
-        sessionList.innerHTML = '<div style="text-align: center; color: var(--subtext); padding: 20px;">No sessions found. Start a conversation to create your first session!</div>';
+        sessionList.innerHTML = '<div style="text-align: center; color: var(--subtext); padding: 20px;">No sessions found.</div>';
         return;
       }
-
       sessionList.innerHTML = '';
       sessions.forEach(session => {
         const item = document.createElement('div');
         item.className = `session-item ${session.session_id === sessionId ? 'active' : ''}`;
-
         const title = session.title || `Session ${session.session_id.slice(0,8)}...`;
         const createdAt = new Date(session.created_at).toLocaleString();
         const lastActivity = new Date(session.last_activity_at).toLocaleString();
-
         item.innerHTML = `
-          <div class="session-info">
+          <div class="session-info" onclick="switchToSession('${session.session_id}')">
             <div class="session-title">${title}</div>
             <div class="session-meta">
               ${session.message_count} messages • Created: ${createdAt}
@@ -690,51 +705,23 @@
             </div>
           </div>
           <div class="session-actions">
-            <button class="btn ghost" onclick="switchToSession('${session.session_id}')" title="Switch to this session">Open</button>
             <button class="btn danger" onclick="deleteSession('${session.session_id}')" title="Delete this session">Delete</button>
           </div>
         `;
-
         sessionList.appendChild(item);
       });
     }
 
     // ---------- Agent State Inspector ----------
     async function loadDebugData(){
-      if(!accessToken || !sessionId) {
-        debugData = { error: 'No active session or not authenticated' };
-        return;
-      }
-
+      if(!accessToken || !sessionId) { debugData = { error: 'No active session or not authenticated' }; return; }
       try{
-        // Load session data with messages
-        const sessionRes = await fetch(`${API_BASE}/sessions/${sessionId}/messages`, {
-          headers: { ...authHeader() }
-        });
+        const sessionRes = await fetch(`${API_BASE}/sessions/${sessionId}/messages`, { headers: { ...authHeader() } });
         if(sessionRes.status === 401 && await tryRefresh()) return loadDebugData();
-
-        let sessionData = {};
-        if(sessionRes.ok){
-          sessionData = await sessionRes.json();
-        }
-
-        // Load session stats (we'll create this endpoint)
-        const statsRes = await fetch(`${API_BASE}/session-stats`, {
-          headers: { ...authHeader() }
-        });
-        let statsData = {};
-        if(statsRes.ok){
-          statsData = await statsRes.json();
-        }
-
-        debugData = {
-          session: sessionData,
-          stats: statsData,
-          timestamp: new Date().toISOString(),
-          sessionId: sessionId,
-          conversationHistory: conversationHistory
-        };
-
+        let sessionData = sessionRes.ok ? await sessionRes.json() : {};
+        const statsRes = await fetch(`${API_BASE}/session-stats`, { headers: { ...authHeader() } });
+        let statsData = statsRes.ok ? await statsRes.json() : {};
+        debugData = { session: sessionData, stats: statsData, timestamp: new Date().toISOString(), sessionId: sessionId, conversationHistory: conversationHistory };
       } catch(e){
         debugData = { error: e.message, timestamp: new Date().toISOString() };
       }
@@ -742,169 +729,53 @@
 
     function renderDebugOverview(){
       const panel = el('debug-overview');
-      if(!debugData || debugData.error){
-        panel.innerHTML = `<div class="debug-card"><h4>Error</h4><div class="debug-status error">${debugData?.error || 'No data available'}</div></div>`;
-        return;
-      }
-
+      if(!debugData || debugData.error){ panel.innerHTML = `<div class="debug-card"><h4>Error</h4><div class="debug-status error">${debugData?.error || 'No data available'}</div></div>`; return; }
       const session = debugData.session;
       const messageCount = session?.messages?.length || conversationHistory.length;
-      const lastActivity = session?.messages?.length > 0 ?
-        new Date(session.messages[session.messages.length - 1].created_at).toLocaleString() :
-        'No messages';
-
+      const lastActivity = session?.messages?.length > 0 ? new Date(session.messages[session.messages.length - 1].created_at).toLocaleString() : 'No messages';
       el('debug-session-id').innerHTML = `<code>${sessionId || 'None'}</code>`;
       el('debug-message-count').innerHTML = `<span class="debug-status success">${messageCount} messages</span>`;
       el('debug-session-status').innerHTML = `<span class="debug-status ${sessionId ? 'success' : 'warning'}">${sessionId ? 'Active' : 'No Session'}</span>`;
       el('debug-last-activity').innerHTML = `<span style="font-size: 12px;">${lastActivity}</span>`;
     }
-
     function renderDebugMemory(){
       const content = el('debug-memory-content');
-      if(!debugData || debugData.error){
-        content.innerHTML = `<div class="debug-status error">${debugData?.error || 'No data available'}</div>`;
-        return;
-      }
-
-      const memoryHtml = `
-        <div class="debug-grid">
-          <div class="debug-card">
-            <h4>Conversation History</h4>
-            <div class="debug-code">${JSON.stringify(conversationHistory, null, 2)}</div>
-          </div>
-          <div class="debug-card">
-            <h4>Session Context</h4>
-            <div class="debug-code">${JSON.stringify({
-              sessionId: sessionId,
-              messageCount: conversationHistory.length,
-              lastMessage: conversationHistory[conversationHistory.length - 1] || null
-            }, null, 2)}</div>
-          </div>
-        </div>
-      `;
-      content.innerHTML = memoryHtml;
+      if(!debugData || debugData.error){ content.innerHTML = `<div class="debug-status error">${debugData?.error || 'No data available'}</div>`; return; }
+      content.innerHTML = `<div class="debug-grid"><div class="debug-card"><h4>Conversation History</h4><div class="debug-code">${JSON.stringify(conversationHistory, null, 2)}</div></div><div class="debug-card"><h4>Session Context</h4><div class="debug-code">${JSON.stringify({ sessionId: sessionId, messageCount: conversationHistory.length, lastMessage: conversationHistory[conversationHistory.length - 1] || null }, null, 2)}</div></div></div>`;
     }
-
     function renderDebugTools(){
       const content = el('debug-tools-content');
-      if(!debugData || debugData.error){
-        content.innerHTML = `<div class="debug-status error">${debugData?.error || 'No data available'}</div>`;
-        return;
-      }
-
+      if(!debugData || debugData.error){ content.innerHTML = `<div class="debug-status error">${debugData?.error || 'No data available'}</div>`; return; }
       const messages = debugData.session?.messages || [];
       const toolMessages = messages.filter(msg => msg.role === 'assistant' && msg.tools_used && msg.tools_used.length > 0);
-
-      if(toolMessages.length === 0){
-        content.innerHTML = '<div class="debug-status warning">No tool executions found in this session</div>';
-        return;
-      }
-
-      const toolsHtml = toolMessages.map((msg, index) => `
-        <div class="debug-card">
-          <h4>Tool Execution #${index + 1}</h4>
-          <div style="margin-bottom: 8px;">
-            <span class="debug-status success">Tools: ${msg.tools_used.join(', ')}</span>
-            ${msg.processing_time_ms ? `<span class="debug-status">${msg.processing_time_ms}ms</span>` : ''}
-          </div>
-          <div class="debug-code">${JSON.stringify({
-            tools: msg.tools_used,
-            processingTime: msg.processing_time_ms,
-            hasError: msg.has_error,
-            timestamp: msg.created_at
-          }, null, 2)}</div>
-        </div>
-      `).join('');
-
+      if(toolMessages.length === 0){ content.innerHTML = '<div class="debug-status warning">No tool executions found</div>'; return; }
+      const toolsHtml = toolMessages.map((msg, index) => `<div class="debug-card"><h4>Tool Execution #${index + 1}</h4><div style="margin-bottom: 8px;"><span class="debug-status success">Tools: ${msg.tools_used.join(', ')}</span>${msg.processing_time_ms ? `<span class="debug-status">${msg.processing_time_ms}ms</span>` : ''}</div><div class="debug-code">${JSON.stringify({ tools: msg.tools_used, processingTime: msg.processing_time_ms, hasError: msg.has_error, timestamp: msg.created_at }, null, 2)}</div></div>`).join('');
       content.innerHTML = `<div class="debug-grid">${toolsHtml}</div>`;
     }
-
     function renderDebugSession(){
       const content = el('debug-session-content');
-      if(!debugData || debugData.error){
-        content.innerHTML = `<div class="debug-status error">${debugData?.error || 'No data available'}</div>`;
-        return;
-      }
-
-      const sessionInfo = {
-        sessionId: sessionId,
-        messageCount: conversationHistory.length,
-        lastRefresh: debugData.timestamp,
-        localStorage: {
-          sessionId: localStorage.getItem('pa_session_id'),
-          accessToken: !!localStorage.getItem('accessToken'),
-          theme: localStorage.getItem('theme')
-        },
-        browserInfo: {
-          userAgent: navigator.userAgent,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          language: navigator.language
-        }
-      };
-
-      content.innerHTML = `
-        <div class="debug-grid">
-          <div class="debug-card">
-            <h4>Session Information</h4>
-            <div class="debug-code">${JSON.stringify(sessionInfo, null, 2)}</div>
-          </div>
-          <div class="debug-card">
-            <h4>Raw Session Data</h4>
-            <div class="debug-code">${JSON.stringify(debugData.session, null, 2)}</div>
-          </div>
-        </div>
-      `;
+      if(!debugData || debugData.error){ content.innerHTML = `<div class="debug-status error">${debugData?.error || 'No data available'}</div>`; return; }
+      const sessionInfo = { sessionId: sessionId, messageCount: conversationHistory.length, lastRefresh: debugData.timestamp, localStorage: { sessionId: localStorage.getItem('pa_session_id'), accessToken: !!localStorage.getItem('accessToken'), theme: localStorage.getItem('theme') }, browserInfo: { userAgent: navigator.userAgent, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, language: navigator.language } };
+      content.innerHTML = `<div class="debug-grid"><div class="debug-card"><h4>Session Information</h4><div class="debug-code">${JSON.stringify(sessionInfo, null, 2)}</div></div><div class="debug-card"><h4>Raw Session Data</h4><div class="debug-code">${JSON.stringify(debugData.session, null, 2)}</div></div></div>`;
     }
-
     function renderDebugErrors(){
       const content = el('debug-errors-content');
-      if(!debugData || debugData.error){
-        content.innerHTML = `<div class="debug-status error">Debug Error: ${debugData?.error || 'No data available'}</div>`;
-        return;
-      }
-
+      if(!debugData || debugData.error){ content.innerHTML = `<div class="debug-status error">Debug Error: ${debugData?.error || 'No data available'}</div>`; return; }
       const messages = debugData.session?.messages || [];
       const errorMessages = messages.filter(msg => msg.has_error);
-
-      if(errorMessages.length === 0){
-        content.innerHTML = '<div class="debug-status success">No errors found in this session</div>';
-        return;
-      }
-
-      const errorsHtml = errorMessages.map((msg, index) => `
-        <div class="debug-card">
-          <h4>Error #${index + 1}</h4>
-          <div style="margin-bottom: 8px;">
-            <span class="debug-status error">Error in ${msg.role} message</span>
-            <span class="debug-status">${new Date(msg.created_at).toLocaleString()}</span>
-          </div>
-          <div class="debug-code">${JSON.stringify({
-            role: msg.role,
-            error: msg.error_message,
-            content: msg.content.substring(0, 200) + (msg.content.length > 200 ? '...' : ''),
-            timestamp: msg.created_at
-          }, null, 2)}</div>
-        </div>
-      `).join('');
-
+      if(errorMessages.length === 0){ content.innerHTML = '<div class="debug-status success">No errors found</div>'; return; }
+      const errorsHtml = errorMessages.map((msg, index) => `<div class="debug-card"><h4>Error #${index + 1}</h4><div style="margin-bottom: 8px;"><span class="debug-status error">Error in ${msg.role} message</span><span class="debug-status">${new Date(msg.created_at).toLocaleString()}</span></div><div class="debug-code">${JSON.stringify({ role: msg.role, error: msg.error_message, content: msg.content.substring(0, 200) + (msg.content.length > 200 ? '...' : ''), timestamp: msg.created_at }, null, 2)}</div></div>`).join('');
       content.innerHTML = `<div class="debug-grid">${errorsHtml}</div>`;
     }
-
     async function refreshDebugData(){
       const refreshBtn = el('debug-refresh');
-      refreshBtn.textContent = '⟳';
-      refreshBtn.disabled = true;
-
+      refreshBtn.textContent = '⟳'; refreshBtn.disabled = true;
       await loadDebugData();
       renderCurrentDebugPanel();
-
-      refreshBtn.textContent = '🔄';
-      refreshBtn.disabled = false;
+      refreshBtn.textContent = '🔄'; refreshBtn.disabled = false;
     }
-
     function renderCurrentDebugPanel(){
       const activeTab = document.querySelector('.debug-tab.active')?.dataset.debugTab || 'overview';
-
       switch(activeTab){
         case 'overview': renderDebugOverview(); break;
         case 'memory': renderDebugMemory(); break;
@@ -913,16 +784,13 @@
         case 'errors': renderDebugErrors(); break;
       }
     }
-
     function wireDebugTabs(){
       document.querySelectorAll('.debug-tab').forEach(tab => {
         tab.addEventListener('click', () => {
           document.querySelectorAll('.debug-tab').forEach(t => t.classList.remove('active'));
           document.querySelectorAll('.debug-panel').forEach(p => p.classList.remove('active'));
-
           tab.classList.add('active');
           document.getElementById(`debug-${tab.dataset.debugTab}`).classList.add('active');
-
           renderCurrentDebugPanel();
         });
       });
@@ -931,37 +799,71 @@
     // ---------- Chat ----------
     async function sendMessage(text){
       const msg = text ?? el('composer').value; if(!msg.trim()) return; if(!accessToken) return openAuthModal();
-
-      // Ensure we have a session
-      if(!sessionId){
-        const newSession = await createNewSession();
-        if(!newSession) return; // Failed to create session
-      }
-
+      if(!sessionId){ const newSession = await createNewSession(); if(!newSession) return; }
       if (el('landing').style.display !== 'none') { el('landing').style.display='none'; el('chat').style.display='grid' }
       appendMessage('user', msg); el('composer').value='';
       const streaming = JSON.parse(localStorage.getItem('pref_stream')||'false');
       const requestBody = { message: msg, conversation_history: conversationHistory, stream: streaming, session_id: usePA?sessionId:undefined, context:{ timezone:Intl.DateTimeFormat().resolvedOptions().timeZone, now_iso:new Date().toISOString() } };
-      console.log('🔍 DEBUG: Sending request with session_id:', usePA?sessionId:undefined, 'usePA:', usePA);
-      el('typing').style.display='inline-flex'; setConn(streaming?'Connecting…':'Requesting…');
+      showTypingIndicator();
+      setConn(streaming?'Connecting…':'Requesting…');
       if (streaming) await sendStreaming(requestBody); else await sendNonStreaming(requestBody);
-      el('typing').style.display='none'; setConn('Idle');
+      setConn('Idle');
     }
 
     async function sendNonStreaming(body){
-      try{ let res=await fetch(`${API_BASE}/chat`,{method:'POST',headers:{'Content-Type':'application/json',...authHeader()},body:JSON.stringify(body)}); if(res.status===401 && await tryRefresh()) res=await fetch(`${API_BASE}/chat`,{method:'POST',headers:{'Content-Type':'application/json',...authHeader()},body:JSON.stringify(body)}); const data=await res.json(); conversationHistory.push({role:'user',content:body.message}); conversationHistory.push({role:'assistant',content:data.response}); appendMessage('assistant', data.response||'[no response]') }catch(e){ appendMessage('assistant','Network error: '+e.message) }
+      removeTypingIndicator();
+      try{
+        let res=await fetch(`${API_BASE}/chat`,{method:'POST',headers:{'Content-Type':'application/json',...authHeader()},body:JSON.stringify(body)});
+        if(res.status===401 && await tryRefresh()) res=await fetch(`${API_BASE}/chat`,{method:'POST',headers:{'Content-Type':'application/json',...authHeader()},body:JSON.stringify(body)});
+        const data=await res.json();
+        conversationHistory.push({role:'user',content:body.message});
+        conversationHistory.push({role:'assistant',content:data.response});
+        appendMessage('assistant', data.response||'[no response]');
+      }catch(e){
+        appendMessage('assistant','Network error: '+e.message);
+      }
     }
 
     async function sendStreaming(body){
-      try{ let res=await fetch(`${API_BASE}/chat/stream`,{method:'POST',headers:{'Content-Type':'application/json',...authHeader()},body:JSON.stringify(body)}); if(res.status===401 && await tryRefresh()) res=await fetch(`${API_BASE}/chat/stream`,{method:'POST',headers:{'Content-Type':'application/json',...authHeader()},body:JSON.stringify(body)}); if(!res.ok || !res.body){ appendMessage('assistant',`Stream error: HTTP ${res.status}`); return }
-        const reader=res.body.getReader(); const dec=new TextDecoder('utf-8'); let buffer='', final=''; showDraft(); setConn('Streaming…');
-        while(true){ const {value, done}=await reader.read(); 
-        if(done) break; 
-        buffer += dec.decode(value,{stream:true}); 
-        let idx; while((idx=buffer.indexOf(''))!==-1){ const chunk=buffer.slice(0,idx); buffer=buffer.slice(idx+2); const lines=chunk.split(''); let eventType='message', dataLine=''; for(const line of lines){ if(line.startsWith('event:')) 
-        eventType=line.slice(6).trim(); if(line.startsWith('data:')) dataLine += line.slice(5).trim() } if(!dataLine) continue; let payload; try{ payload=JSON.parse(dataLine) }catch{ continue } if(eventType==='stream_chunk' && payload.type==='final_answer'){ final += payload.content||''; updateDraft(final) } if(eventType==='stream_complete'){ final = payload.content || final } } }
-        if(final){ conversationHistory.push({role:'user',content:body.message}); conversationHistory.push({role:'assistant',content:final}); finalizeDraft(); appendMessage('assistant', final) }
-      }catch(e){ appendMessage('assistant','Stream read error: '+e.message) }
+      removeTypingIndicator();
+      try{
+        let res=await fetch(`${API_BASE}/chat/stream`,{method:'POST',headers:{'Content-Type':'application/json',...authHeader()},body:JSON.stringify(body)});
+        if(res.status===401 && await tryRefresh()) res=await fetch(`${API_BASE}/chat/stream`,{method:'POST',headers:{'Content-Type':'application/json',...authHeader()},body:JSON.stringify(body)});
+        if(!res.ok || !res.body){ appendMessage('assistant',`Stream error: HTTP ${res.status}`); return }
+        const reader=res.body.getReader(); const dec=new TextDecoder('utf-8'); let buffer='', final='';
+        showDraft(); setConn('Streaming…');
+        while(true){
+          const {value, done}=await reader.read();
+          if(done) break;
+          buffer += dec.decode(value,{stream:true});
+          let boundary;
+          while ((boundary = buffer.indexOf('\n\n')) !== -1) {
+            const chunk = buffer.slice(0, boundary);
+            buffer = buffer.slice(boundary + 2);
+            const lines = chunk.split('\n');
+            let eventType = 'message', dataLine = '';
+            for(const line of lines){
+              if(line.startsWith('event:')) eventType=line.slice(6).trim();
+              else if(line.startsWith('data:')) dataLine += line.slice(5);
+            }
+            if(!dataLine) continue;
+            let payload;
+            try{ payload=JSON.parse(dataLine.trim()) }catch{ continue }
+            if(eventType==='stream_chunk' && payload.type==='final_answer'){ final += payload.content||''; updateDraft(final) }
+            if(eventType==='stream_complete'){ final = payload.content || final; updateDraft(final) }
+          }
+        }
+        if(final){
+          conversationHistory.push({role:'user',content:body.message});
+          conversationHistory.push({role:'assistant',content:final});
+          finalizeDraft();
+        } else {
+          finalizeDraft();
+          const bubbles = document.querySelectorAll('.bubble.assistant');
+          const lastBubble = bubbles[bubbles.length - 1];
+          if (lastBubble && lastBubble.innerHTML === '') { lastBubble.parentElement.parentElement.remove(); }
+        }
+      }catch(e){ removeTypingIndicator(); appendMessage('assistant','Stream read error: '+e.message) }
     }
 
     function clearChat(){ conversationHistory=[]; el('messages').innerHTML=''; }
@@ -971,7 +873,7 @@
     function closeModal(sel){ document.querySelector(sel).classList.remove('show') }
     function wireTabs(){
       document.querySelectorAll('.tab').forEach(btn=>{
-        btn.addEventListener('click', ()=>{
+        btn.addEventListener('click', ()=>{ 
           document.querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-selected','false'));
           document.querySelectorAll('.tabpanel').forEach(p=>p.classList.remove('show'));
           btn.setAttribute('aria-selected','true');
@@ -986,62 +888,41 @@
       document.querySelectorAll('[data-close]').forEach(x=> x.addEventListener('click', ()=> closeModal(x.getAttribute('data-close'))));
       wireTabs();
 
-      // header buttons
-      el('gc-btn').onclick = () => googleAuthorize();
       el('theme-btn').onclick = () => { const next=document.body.getAttribute('data-theme')==='dark'?'light':'dark'; document.body.setAttribute('data-theme',next); localStorage.setItem('theme',next) };
       el('sessions-btn').onclick = () => { openModal('#sessions-modal'); renderSessionList(); };
       el('debug-btn').onclick = async () => { openModal('#debug-modal'); await loadDebugData(); renderCurrentDebugPanel(); };
       el('center-btn').onclick = () => { openModal('#center-modal'); googleStatus(); document.querySelector('.tab[data-tab="google"]').click(); };
       el('logout-btn').onclick = logout; el('login-btn').onclick = openAuthModal;
 
-      // landing
       el('landing-send').onclick = () => sendMessage(el('landing-input').value);
       el('landing-input').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); sendMessage(el('landing-input').value) }});
       el('open-auth').onclick = openAuthModal;
 
-      // chat
       el('send').onclick = () => sendMessage();
       el('new-session').onclick = createNewSession;
       el('composer').addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMessage() } });
-      el('composer').addEventListener('input', ()=> el('char-count').textContent = el('composer').value.length);
-      el('clear').onclick = clearChat;
 
-      // center modal actions
-      el('gc-connect').onclick = googleAuthorize; el('gc-revoke').onclick = googleRevoke; el('health').onclick = healthCheck;
+      el('gc-connect').onclick = googleAuthorize; el('gc-revoke').onclick = googleRevoke;
+      el('gmail-connect').onclick = gmailAuthorize; el('gmail-revoke').onclick = gmailRevoke;
+      el('health').onclick = healthCheck;
 
-      // login modal actions
       el('modal-login').onclick = login;
       el('modal-register').onclick = register;
       el('modal-logout-btn').onclick = logout;
 
-      // Enter key support for login modal
       el('login-email').addEventListener('keydown', e => { if(e.key === 'Enter') { e.preventDefault(); el('login-password').focus(); }});
       el('login-password').addEventListener('keydown', e => { if(e.key === 'Enter') { e.preventDefault(); login(); }});
 
-      // session management
       el('create-session').onclick = createNewSession;
       el('debug-refresh').onclick = refreshDebugData;
-
-      // Wire debug tabs
       wireDebugTabs();
 
-      // Keyboard shortcuts
-      document.addEventListener('keydown', e => {
-        if(e.ctrlKey && e.key === 'd'){
-          e.preventDefault();
-          el('debug-btn').click();
-        }
-      });
+      document.addEventListener('keydown', e => { if(e.ctrlKey && e.key === 'd'){ e.preventDefault(); el('debug-btn').click(); } });
 
-      // settings
       el('pref-stream').checked = prefs.stream; el('pref-compact').checked = prefs.compact; el('pref-stream').onchange = (e)=> localStorage.setItem('pref_stream', e.target.checked); el('pref-compact').onchange = (e)=> localStorage.setItem('pref_compact', e.target.checked); el('theme').value=prefs.theme; el('theme').onchange=(e)=>{ document.body.setAttribute('data-theme', e.target.value); localStorage.setItem('theme', e.target.value) };
 
       setAuthUI(); googleStatus(); setBadge(el('conn-badge'),'Idle');
-
-      // If already authenticated, hide landing auth CTA
       if(accessToken){ document.getElementById('landing-auth-cta').style.display='none' }
-
-      // Initialize session if we have one stored
       if(sessionId && accessToken){
         setBadge(el('conn-badge'), `Session: ${sessionId.slice(0,8)}...`, 'ok');
         setTimeout(() => setBadge(el('conn-badge'), 'Idle'), 2000);

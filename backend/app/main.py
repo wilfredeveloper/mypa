@@ -30,6 +30,7 @@ async def _seed_tool_registry(session) -> None:
     from app.models.tool import ToolRegistry, ToolType
     from app.agents.personal_assistant.tools.schemas import (
         GOOGLE_CALENDAR_SCHEMA,
+        GMAIL_SCHEMA,
         SYSTEM_PROMPT_SCHEMA,
         PLANNING_SCHEMA,
         VIRTUAL_FS_SCHEMA,
@@ -92,6 +93,26 @@ async def _seed_tool_registry(session) -> None:
             "oauth_provider": "google",
             "rate_limit_per_minute": 60,
             "rate_limit_per_day": 1000,
+        },
+        {
+            "name": "gmail",
+            "display_name": "Gmail",
+            "description": (
+                "Manage Gmail: read inbox, send emails, reply to messages, search emails, and manage labels. "
+                "Requires Google OAuth with Gmail permissions to operate."
+            ),
+            "tool_type": ToolType.EXTERNAL,
+            "category": "communication",
+            "schema_data": GMAIL_SCHEMA,
+            "permissions_required": [
+                "https://www.googleapis.com/auth/gmail.readonly",
+                "https://www.googleapis.com/auth/gmail.send",
+                "https://www.googleapis.com/auth/gmail.compose",
+                "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "oauth_provider": "google",
+            "rate_limit_per_minute": 30,
+            "rate_limit_per_day": 500,
         }
     ]
 
@@ -195,6 +216,7 @@ def create_application() -> FastAPI:
             from app.models.tool import ToolRegistry, ToolType
             from app.agents.personal_assistant.tools.schemas import (
                 GOOGLE_CALENDAR_SCHEMA,
+                GMAIL_SCHEMA,
                 SYSTEM_PROMPT_SCHEMA,
                 PLANNING_SCHEMA,
                 VIRTUAL_FS_SCHEMA,

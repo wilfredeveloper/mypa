@@ -48,7 +48,7 @@ class GoogleCalendarTool(ExternalTool):
         try:
             if not self.user_access or not self.user_access.is_authorized:
                 return False
-            cfg = (self.user_access.config_data or {}).get("google_calendar_oauth", {})
+            cfg = (self.user_access.config_data or {}).get("google_oauth", {})
             # Accept either refresh_token or current access token
             return bool(cfg.get("refresh_token") or cfg.get("token"))
         except Exception:

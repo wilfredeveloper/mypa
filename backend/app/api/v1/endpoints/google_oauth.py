@@ -100,17 +100,30 @@ async def google_oauth_status(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        access = await get_or_create_user_tool_access(db, current_user.id, "google_calendar")
-        cfg = (access.config_data or {}).get("google_calendar_oauth", {}) or {}
+        # Check both Calendar and Gmail access
+        calendar_access = await get_or_create_user_tool_access(db, current_user.id, "google_calendar")
+        gmail_access = await get_or_create_user_tool_access(db, current_user.id, "gmail")
+
+        # Check tokens from shared google_oauth key
+        calendar_cfg = (calendar_access.config_data or {}).get("google_oauth", {}) or {}
+        gmail_cfg = (gmail_access.config_data or {}).get("google_oauth", {}) or {}
+
+        # Use whichever has tokens (they should be the same)
+        cfg = calendar_cfg if calendar_cfg else gmail_cfg
         tokens_present = bool(cfg.get("refresh_token") or cfg.get("token"))
-        # Treat as authorized only if tokens are present AND the access record is marked authorized
-        authorized = bool(tokens_present and access.is_authorized)
+
+        # Both tools should be authorized if tokens are present
+        calendar_authorized = bool(tokens_present and calendar_access.is_authorized)
+        gmail_authorized = bool(tokens_present and gmail_access.is_authorized)
+        authorized = calendar_authorized or gmail_authorized  # Either one being authorized means OAuth is working
+
         try:
             logger.info(
-                "[Google OAuth Status] user_id=%s authorized=%s is_authorized=%s token_present=%s refresh_present=%s",
+                "[Google OAuth Status] user_id=%s authorized=%s calendar_auth=%s gmail_auth=%s token_present=%s refresh_present=%s",
                 current_user.id,
                 authorized,
-                bool(access.is_authorized),
+                calendar_authorized,
+                gmail_authorized,
                 bool(cfg.get("token")),
                 bool(cfg.get("refresh_token")),
             )
@@ -198,7 +211,8 @@ async def google_oauth_callback(
             "expiry": getattr(creds, "expiry", None).isoformat() if getattr(creds, "expiry", None) else None,
         }
         cfg = dict(access.config_data or {})
-        cfg["google_calendar_oauth"] = data
+        cfg["google_calendar_oauth"] = data  # Legacy key for Calendar
+        cfg["google_oauth"] = data  # Shared key for both Calendar and Gmail
         # Remove the consumed state from both legacy key and list
         if cfg.get("google_calendar_oauth_state") == state:
             cfg.pop("google_calendar_oauth_state", None)
@@ -208,6 +222,14 @@ async def google_oauth_callback(
             cfg["google_calendar_oauth_state_list"] = pending_states
         access.config_data = cfg
         access.authorize()
+
+        # Also authorize Gmail tool since they share the same OAuth
+        gmail_access = await get_or_create_user_tool_access(db, access.user_id, "gmail")
+        gmail_cfg = dict(gmail_access.config_data or {})
+        gmail_cfg["google_oauth"] = data
+        gmail_access.config_data = gmail_cfg
+        gmail_access.authorize()
+
         await db.commit()
         try:
             # Verify persistence
@@ -241,11 +263,22 @@ async def google_oauth_revoke(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        access = await get_or_create_user_tool_access(db, current_user.id, "google_calendar")
-        cfg = access.config_data or {}
-        cfg.pop("google_calendar_oauth", None)
-        access.config_data = cfg
-        access.revoke_authorization()
+        # Revoke both Calendar and Gmail access
+        calendar_access = await get_or_create_user_tool_access(db, current_user.id, "google_calendar")
+        gmail_access = await get_or_create_user_tool_access(db, current_user.id, "gmail")
+
+        # Clear OAuth data from both tools
+        calendar_cfg = dict(calendar_access.config_data or {})
+        calendar_cfg.pop("google_calendar_oauth", None)  # Legacy key
+        calendar_cfg.pop("google_oauth", None)  # Shared key
+        calendar_access.config_data = calendar_cfg
+        calendar_access.revoke_authorization()
+
+        gmail_cfg = dict(gmail_access.config_data or {})
+        gmail_cfg.pop("google_oauth", None)  # Shared key
+        gmail_access.config_data = gmail_cfg
+        gmail_access.revoke_authorization()
+
         await db.commit()
 
         accept = request.headers.get("accept", "")

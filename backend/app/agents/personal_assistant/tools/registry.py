@@ -4,6 +4,7 @@ Tool Registry Manager for Personal Assistant.
 
 import importlib
 import inspect
+import json
 from typing import Dict, Any, List, Optional, Type
 from datetime import datetime, timezone
 import logging
@@ -265,6 +266,19 @@ class ToolRegistryManager:
                 result_type,
                 size_hint,
             )
+
+            # Log detailed result for Gmail tool to show what's passed to agent
+            if tool_name == "gmail":
+                logger.info(f"🔍 DETAILED GMAIL TOOL RESULT FOR AGENT:")
+                try:
+                    result_preview = _sanitize(result, depth=0)
+                    result_json = json.dumps(result_preview, indent=2)[:2000]  # First 2000 chars
+                    logger.info(f"📋 Gmail Tool Result (first 2000 chars):\n{result_json}")
+                    if len(json.dumps(result_preview)) > 2000:
+                        logger.info(f"📋 ... (result truncated, total size: {len(json.dumps(result_preview))} chars)")
+                except Exception as e:
+                    logger.info(f"📋 Gmail Tool Result (raw): {str(result)[:1000]}")
+
             return result
 
         except Exception as e:

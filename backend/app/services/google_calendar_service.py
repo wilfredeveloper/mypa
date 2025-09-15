@@ -21,7 +21,11 @@ from sqlalchemy import select
 from app.models.tool import ToolRegistry, UserToolAccess
 
 SCOPES = [
-    "https://www.googleapis.com/auth/calendar"
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/gmail.compose",
+    "https://www.googleapis.com/auth/gmail.modify",
 ]
 
 
@@ -63,7 +67,7 @@ def _resolve_client_secrets_path() -> str:
 class GoogleOAuthStore:
     """Utility for reading/writing OAuth tokens in UserToolAccess.config_data."""
 
-    KEY = "google_calendar_oauth"
+    KEY = "google_oauth"
 
     @staticmethod
     def read(user_access: Optional[UserToolAccess]) -> Dict[str, Any]:

@@ -62,6 +62,14 @@ function PersonalAssistantThinking(
     - If user wants to save a plan to a file, first get the plan using planning tool, then save to virtual_fs
     - Plans are stored in memory and can be retrieved by ID or by searching the title
 
+    SPECIAL GUIDANCE FOR EMAIL/GMAIL:
+    - Use Gmail tool for reading, sending, replying to, or searching actual emails
+    - Use Gmail for checking inbox, managing email labels, or email-related tasks
+    - Gmail requires authorization - if user gets authorization error, guide them to authorize Gmail
+    - For email composition, always include proper to/subject/body structure
+    - When searching emails, use Gmail search syntax (from:, to:, subject:, has:attachment, etc.)
+    - For email replies, you need the original message_id from a previous read or search operation
+
     IMPORTANT: When specifying tool parameters, ensure they are valid JSON objects.
     For complex parameters like event_data or time_range, provide properly structured JSON strings.
 
@@ -84,6 +92,68 @@ function PersonalAssistantThinking(
         "event_data": "{\"summary\": \"Daily Standup\", \"start\": \"2025-01-15T09:00:00Z\", \"end\": \"2025-01-15T09:30:00Z\", \"recurrence\": [\"RRULE:FREQ=DAILY\"]}"
       }
     }
+
+    Example tool calls for Gmail:
+
+    Read inbox:
+    {
+      "name": "gmail",
+      "parameters": {
+        "action": "read",
+        "folder": "INBOX",
+        "max_results": "10"
+      }
+    }
+
+    Send email:
+    {
+      "name": "gmail",
+      "parameters": {
+        "action": "send",
+        "message_data": "{\"to\": \"john@example.com\", \"subject\": \"Meeting Follow-up\", \"body\": \"Hi John, Thanks for the meeting today. Here are the action items we discussed...\"}"
+      }
+    }
+
+    IMPORTANT: For Gmail send/reply actions, message_data MUST be a valid JSON string with proper quotes around keys and values:
+    - Correct: "{\"to\": \"email@example.com\", \"subject\": \"Subject\", \"body\": \"Message body\"}"
+    - Incorrect: "{to: email@example.com, subject: Subject, body: Message body}"
+
+    Reply to email:
+    {
+      "name": "gmail",
+      "parameters": {
+        "action": "reply",
+        "message_id": "abc123def456",
+        "message_data": "{\"body\": \"Thanks for your email. I'll review the document and get back to you by Friday.\"}"
+      }
+    }
+
+    Search emails:
+    {
+      "name": "gmail",
+      "parameters": {
+        "action": "search",
+        "query": "from:john@example.com subject:project",
+        "max_results": "5"
+      }
+    }
+
+    GMAIL SEARCH SYNTAX EXAMPLES:
+    - Basic text search: "project update"
+    - From specific sender: "from:john@example.com"
+    - To specific recipient: "to:jane@example.com"
+    - Subject search: "subject:meeting"
+    - Date range: "after:2024/1/1 before:2024/12/31"
+    - Has attachment: "has:attachment"
+    - Unread emails: "is:unread"
+    - Starred emails: "is:starred"
+    - Complex search: "from:john@example.com subject:project has:attachment"
+
+    GMAIL ERROR HANDLING:
+    - If Gmail authorization error occurs, explain user needs to authorize Gmail access
+    - If message_id not found for reply, suggest searching for the email first
+    - If email sending fails, check that to/subject fields are properly provided
+    - For search with no results, suggest trying broader search terms
 
     You MUST respond with a JSON object containing exactly these fields:
     {
