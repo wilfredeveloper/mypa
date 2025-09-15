@@ -189,6 +189,32 @@ class ConversationService:
         logger.debug(f"Added {role} message to session {session.session_id}")
         return message
 
+    async def update_session_context(
+        self,
+        session: ConversationSession,
+        context_data: Dict[str, Any]
+    ) -> ConversationSession:
+        """
+        Update the context data for a conversation session.
+
+        Args:
+            session: The conversation session to update
+            context_data: New context data to store
+
+        Returns:
+            The updated ConversationSession
+        """
+        # Update the context data
+        session.context_data = context_data
+        session.update_activity()
+
+        # Commit the changes
+        await self.db.commit()
+        await self.db.refresh(session)
+
+        logger.debug(f"Updated context for session {session.session_id}")
+        return session
+
     async def get_user_sessions(
         self,
         user: User,

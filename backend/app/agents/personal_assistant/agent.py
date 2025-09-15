@@ -52,7 +52,7 @@ class PersonalAssistant:
         # Initialize configuration
         self._pa_config = PersonalAssistantConfig()
 
-        logger.info(f"\n\n >>Initialized Personal Assistant for user {user.id}\n")
+        logger.info(f"\n\n >>Initialized Personal Assistant for user {user.id}")
 
     async def initialize(self) -> None:
         """Initialize the agent with database configuration."""
@@ -70,12 +70,12 @@ class PersonalAssistant:
             available_tools = await self._tool_registry.get_available_tools()
             tool_names = ", ".join([t.name for t in available_tools]) if available_tools else "none"
             
-            logger.info(f"\n\n >>Available tools at initialization for user {self.user.id}: [{tool_names}] (count={len(available_tools)})\n")
+            logger.info(f"\n\n >>Available tools at initialization for user {self.user.id}: [{tool_names}] (count={len(available_tools)})")
         except Exception as e:
             logger.error(f"Failed to list available tools at initialization: {e}")
 
 
-        logger.info(f"\n\n >>Personal Assistant initialized for user {self.user.id}\n")
+        logger.info(f"\n\n >>Personal Assistant initialized for user {self.user.id}")
 
     async def _get_or_create_config(self) -> AgentConfig:
         """Get existing config or create default one."""
@@ -113,7 +113,7 @@ class PersonalAssistant:
             await self.db.commit()
             await self.db.refresh(config)
 
-            logger.info(f"\n\n >>Created default config for user {self.user.id}\n")
+            logger.info(f"\n\n >>Created default config for user {self.user.id}")
 
         return config
 
@@ -145,8 +145,8 @@ class PersonalAssistant:
             Dictionary containing response and metadata
         """
         # Debug: Log received session_id
-        logger.info(f"\n\n >>🔍 DEBUG: Received session_id: {repr(session_id)} (type: {type(session_id)})\n")
-        logger.info(f"\n\n >>🔥Received Context: {context}\n")
+        logger.info(f"\n\n >>🔍 DEBUG: Received session_id: {repr(session_id)} (type: {type(session_id)})")
+        logger.info(f"\n\n >>🔥Received Context: {context}")
 
         # Initialize conversation service
         conversation_service = ConversationService(self.db)
@@ -160,12 +160,12 @@ class PersonalAssistant:
 
         # Use the database session ID (in case we created a new one)
         session_id = str(db_session.session_id)  # Ensure it's a string
-        logger.info(f"\n\n >>🎯 Using session_id: {session_id} (DB session exists: {db_session.id is not None})\n")
+        logger.info(f"\n\n >>🎯 Using session_id: {session_id} (DB session exists: {db_session.id is not None})")
 
         # Debug: Log session state
-        logger.info(f"\n\n >>🔍 DEBUG: Checking session {session_id}\n")
-        logger.info(f"\n\n >>   📋 Current sessions in agent: {list(self._sessions.keys())}\n")
-        logger.info(f"\n\n >>   🎯 Session exists in memory: {session_id in self._sessions}\n")
+        logger.info(f"\n\n >>🔍 DEBUG: Checking session {session_id}")
+        logger.info(f"\n\n >>   📋 Current sessions in agent: {list(self._sessions.keys())}")
+        logger.info(f"\n\n >>   🎯 Session exists in memory: {session_id in self._sessions}")
 
         # Initialize session if new
         if session_id not in self._sessions:
@@ -173,29 +173,40 @@ class PersonalAssistant:
             entity_store = ToolEntityStore.load_from_disk(session_id)
             if entity_store is None:
                 entity_store = ToolEntityStore(session_id)
-                logger.info(f"\n\n >>🆕 Created NEW entity store for session {session_id}\n")
+                logger.info(f"\n\n >>🆕 Created NEW entity store for session {session_id}")
             else:
-                logger.info(f"\n\n >>💾 Loaded EXISTING entity store for session {session_id}\n")
+                logger.info(f"\n\n >>💾 Loaded EXISTING entity store for session {session_id}")
                 # Log what was loaded
                 context_summary = entity_store.get_context_summary()
-                logger.info(f"\n\n >>📊 Loaded entity store contains: {context_summary['total_entities']} entities, {context_summary['total_tool_executions']} tool executions\n")
+                logger.info(f"\n\n >>📊 Loaded entity store contains: {context_summary['total_entities']} entities, {context_summary['total_tool_executions']} tool executions")
+
+            # Load persisted context from database or use provided context
+            persisted_context = db_session.context_data if db_session.context_data is not None else {}
+            session_context = context or persisted_context
+
+            # Merge provided context with persisted context (provided context takes precedence)
+            if context and persisted_context:
+                merged_context = persisted_context.copy()
+                merged_context.update(context)
+                session_context = merged_context
 
             self._sessions[session_id] = {
                 "id": session_id,
                 "created_at": datetime.utcnow(),
                 "messages": [],
-                "context": context or {},
+                "context": session_context,
                 "tools_used": [],
                 "entity_store": entity_store
             }
-            logger.info(f"\n\n >>🎯 Initialized NEW session {session_id} for user {self.user.id}\n")
+            logger.info(f"\n\n >>🎯 Initialized NEW session {session_id} for user {self.user.id}")
+            logger.info(f"\n\n >>📋 Loaded context keys: {list(session_context.keys())}")
         else:
-            logger.info(f"\n\n >>♻️  Reusing EXISTING session {session_id} for user {self.user.id}\n")
+            logger.info(f"\n\n >>♻️  Reusing EXISTING session {session_id} for user {self.user.id}")
             # Log current session state
             session = self._sessions[session_id]
             entity_store = session["entity_store"]
             context_summary = entity_store.get_context_summary()
-            logger.info(f"\n\n >>📊 Current session state: {len(session['messages'])} messages, {context_summary['total_entities']} entities, {context_summary['total_tool_executions']} tool executions\n")
+            logger.info(f"\n\n >>📊 Current session state: {len(session['messages'])} messages, {context_summary['total_entities']} entities, {context_summary['total_tool_executions']} tool executions")
 
         session = self._sessions[session_id]
 
@@ -216,17 +227,17 @@ class PersonalAssistant:
             # Log detailed context before processing
             entity_store = session["entity_store"]
             context_summary = entity_store.get_context_summary()
-            logger.info(f"\n\n >>🧠 AGENT CONTEXT BEFORE PROCESSING:\n")
-            logger.info(f"\n\n >>   📝 User Message: '{message}'\n")
-            logger.info(f"\n\n >>   🆔 Session ID: {session_id}\n")
-            logger.info(f"\n\n >>   👤 User ID: {self.user.id}\n")
-            logger.info(f"\n\n >>   📊 Memory Summary: {context_summary}\n")
+            logger.info(f"\n\n >>🧠 AGENT CONTEXT BEFORE PROCESSING:")
+            logger.info(f"\n\n >>   📝 User Message: '{message}'")
+            logger.info(f"\n\n >>   🆔 Session ID: {session_id}")
+            logger.info(f"\n\n >>   👤 User ID: {self.user.id}")
+            logger.info(f"\n\n >>   📊 Memory Summary: {context_summary}")
 
             # Log recent conversation history
             recent_messages = session["messages"][-3:]  # Last 3 messages including current
-            logger.info(f"\n\n >>   💬 Recent Messages ({len(recent_messages)}):\n")
+            logger.info(f"\n\n >>   💬 Recent Messages ({len(recent_messages)}):")
             for i, msg in enumerate(recent_messages):
-                logger.info(f"\n\n >>      {i+1}. [{msg['role']}]: {msg['content'][:100]}...\n")
+                logger.info(f"\n\n >>      {i+1}. [{msg['role']}]: {msg['content'][:100]}...")
 
             # Refresh tool registry to reflect latest OAuth status/permissions
             if self._tool_registry:
@@ -257,16 +268,16 @@ class PersonalAssistant:
 
             # Log detailed context after processing
             context_summary_after = entity_store.get_context_summary()
-            logger.info(f"\n\n >>🎯 AGENT CONTEXT AFTER PROCESSING:\n")
-            logger.info(f"\n\n >>   📤 Response: '{response[:100]}...'\n")
-            logger.info(f"\n\n >>   🔧 Tools Used: {[tool.get('name', 'unknown') for tool in tools_used]}\n")
-            logger.info(f"\n\n >>   📊 Memory Summary After: {context_summary_after}\n")
+            logger.info(f"\n\n >>🎯 AGENT CONTEXT AFTER PROCESSING:")
+            logger.info(f"\n\n >>   📤 Response: '{response[:100]}...'")
+            logger.info(f"\n\n >>   🔧 Tools Used: {[tool.get('name', 'unknown') for tool in tools_used]}")
+            logger.info(f"\n\n >>   📊 Memory Summary After: {context_summary_after}")
 
             # Log changes in memory
             entities_added = context_summary_after['total_entities'] - context_summary['total_entities']
             tools_executed = context_summary_after['total_tool_executions'] - context_summary['total_tool_executions']
             if entities_added > 0 or tools_executed > 0:
-                logger.info(f"\n\n >>   📈 Changes: +{entities_added} entities, +{tools_executed} tool executions\n")
+                logger.info(f"\n\n >>   📈 Changes: +{entities_added} entities, +{tools_executed} tool executions")
 
             # Calculate processing time
             processing_time_ms = None
@@ -302,6 +313,16 @@ class PersonalAssistant:
                     entity_store.save_to_disk()
             except Exception as e:
                 logger.warning(f"Failed to save entity store to disk: {str(e)}")
+
+            # Save session context to database
+            try:
+                await conversation_service.update_session_context(
+                    session=db_session,
+                    context_data=session["context"]
+                )
+                logger.debug(f"Saved session context to database for session {session_id}")
+            except Exception as e:
+                logger.warning(f"Failed to save session context to database: {str(e)}")
 
             return {
                 "response": response,

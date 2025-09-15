@@ -529,6 +529,14 @@ class PAToolCallNode(AsyncNode):
                 except Exception as e:
                     logger.warning(f"Failed to process tool execution for entity store: {str(e)}")
 
+        # Save entity store to disk after processing all tool executions
+        if entity_store and tool_results:
+            try:
+                entity_store.save_to_disk()
+                logger.info(f"💾 Saved entity store to disk after processing {len(tool_results)} tool executions")
+            except Exception as e:
+                logger.warning(f"Failed to save entity store to disk after tool executions: {str(e)}")
+
         # Save for response generation
         shared["current_tool_results"] = tool_results
 

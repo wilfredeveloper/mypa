@@ -32,6 +32,7 @@ class EntityType(Enum):
     PLAN = "plan"
     TASK = "task"
     LOCATION = "location"
+    SEARCH_RESULT = "search_result"
     GENERIC = "generic"
 
 
@@ -361,6 +362,84 @@ class GmailExtractor(ContextExtractor):
         )
 
 
+class TavilySearchExtractor(ContextExtractor):
+    """Extract search result entities from Tavily web search results."""
+
+    def can_extract(self, tool_name: str, result: Dict[str, Any]) -> bool:
+        """Check if this extractor can handle the tool result."""
+        return tool_name == "tavily_search" and "result" in result
+
+    def extract_entities(self, tool_name: str, result: Dict[str, Any]) -> List[EntityContext]:
+        """Extract search result entities from Tavily search results."""
+        logger.info(f"🏷️  TAVILY EXTRACTOR: Attempting to extract from {tool_name}")
+        logger.info(f"   📥 Tool result keys: {list(result.keys())}")
+
+        entities = []
+        # The actual data is nested under "result" key
+        data = result.get("result", {})
+        logger.info(f"   📊 Data keys: {list(data.keys())}")
+        now = datetime.now(timezone.utc)
+
+        # Extract search query information
+        query = data.get("query", "")
+        search_results = data.get("results", [])
+
+        logger.info(f"   🔍 Search query: '{query}'")
+        logger.info(f"   📋 Found {len(search_results)} search results to extract")
+
+        # Create entities for each search result
+        for i, search_result in enumerate(search_results):
+            try:
+                # Generate unique ID for this search result
+                result_id = f"search_{hash(search_result.get('url', '') + query)}_{i}"
+
+                # Extract relevant information
+                title = search_result.get("title", "").strip()
+                url = search_result.get("url", "").strip()
+                content = search_result.get("content", "").strip()
+                score = search_result.get("score", 0.0)
+                published_date = search_result.get("published_date")
+
+                if not title or not url:
+                    logger.debug(f"   ⚠️  Skipping search result {i} - missing title or URL")
+                    continue
+
+                # Create display name
+                display_name = f"Search Result: {title}"
+
+                # Create entity data
+                entity_data = {
+                    "title": title,
+                    "url": url,
+                    "content": content,
+                    "score": score,
+                    "published_date": published_date,
+                    "query": query,
+                    "search_timestamp": now.isoformat(),
+                    "result_index": i
+                }
+
+                entity = EntityContext(
+                    entity_id=result_id,
+                    entity_type=EntityType.SEARCH_RESULT,
+                    display_name=display_name,
+                    data=entity_data,
+                    created_at=now,
+                    last_accessed=now,
+                    source_tool=tool_name
+                )
+
+                entities.append(entity)
+                logger.debug(f"   ✅ Extracted search result: {title}")
+
+            except Exception as e:
+                logger.warning(f"   ❌ Failed to extract search result {i}: {str(e)}")
+                continue
+
+        logger.info(f"   📤 Total search result entities extracted: {len(entities)}")
+        return entities
+
+
 class ToolEntityStore:
     """
     Stores and manages entities extracted from tool executions for the Personal Assistant.
@@ -387,7 +466,8 @@ class ToolEntityStore:
         # Context extractors
         self._extractors: List[ContextExtractor] = [
             CalendarEventExtractor(),
-            GmailExtractor()
+            GmailExtractor(),
+            TavilySearchExtractor()
         ]
         
         # Memory metadata

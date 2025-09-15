@@ -94,7 +94,6 @@ class GoogleCalendarAPI:
     """
     Async-friendly wrapper over googleapiclient Calendar v3, with per-user credentials.
     """
-
     def __init__(self, db: AsyncSession, user_access: UserToolAccess):
         self.db = db
         self.user_access = user_access
