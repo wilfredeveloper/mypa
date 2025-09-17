@@ -137,16 +137,20 @@ VIRTUAL_FS_SCHEMA = {
     "properties": {
         "action": {
             "type": "string",
-            "enum": ["create", "read", "update", "delete", "list", "search"],
-            "description": "The action to perform on virtual files"
+            "enum": ["create", "read", "update", "delete", "append", "exists", "list", "search", "write"],
+            "description": "The action to perform on virtual files. 'write' overwrites existing files, 'create' fails if file exists, 'append' adds to existing content"
+        },
+        "file_path": {
+            "type": "string",
+            "description": "Path/name of the file to operate on (preferred parameter name)"
         },
         "filename": {
             "type": "string",
-            "description": "Name of the file (required for most actions)"
+            "description": "Alternative name for file_path (for backward compatibility)"
         },
         "content": {
             "type": "string",
-            "description": "File content (required for 'create' and 'update' actions)"
+            "description": "File content (required for 'create', 'update', 'append', and 'write' actions)"
         },
         "search_term": {
             "type": "string",
@@ -156,6 +160,18 @@ VIRTUAL_FS_SCHEMA = {
             "type": "object",
             "description": "File metadata (optional for 'create' and 'update' actions)",
             "additionalProperties": True
+        },
+        "session_id": {
+            "type": "string",
+            "description": "Session ID for session-scoped operations"
+        },
+        "user_timezone": {
+            "type": "string",
+            "description": "User timezone for session initialization (e.g., 'UTC', 'America/New_York')"
+        },
+        "user_id": {
+            "type": "string",
+            "description": "User ID for session initialization"
         }
     },
     "required": ["action"],
@@ -164,17 +180,20 @@ VIRTUAL_FS_SCHEMA = {
         {
             "if": {
                 "properties": {
-                    "action": {"enum": ["create", "read", "update", "delete"]}
+                    "action": {"enum": ["create", "read", "update", "delete", "append", "exists", "write"]}
                 }
             },
             "then": {
-                "required": ["filename"]
+                "anyOf": [
+                    {"required": ["file_path"]},
+                    {"required": ["filename"]}
+                ]
             }
         },
         {
             "if": {
                 "properties": {
-                    "action": {"enum": ["create", "update"]}
+                    "action": {"enum": ["create", "update", "append", "write"]}
                 }
             },
             "then": {

@@ -16,15 +16,16 @@ logger = logging.getLogger(__name__)
 
 class GmailTool(ExternalTool):
     """
-    Gmail integration tool for Personal Assistant.
+    Enhanced Gmail integration tool for Personal Assistant with contextual email composition.
 
     This tool provides:
     - Read inbox and specific folders
-    - Compose and send emails
-    - Reply to emails
+    - Compose and send contextual emails with professional templates
+    - Reply to emails with context awareness
     - Search emails with filters
     - Manage labels and folders
     - Handle attachments
+    - Email composition excellence with user assistant signing
     """
 
     def __init__(self, *args, **kwargs):
@@ -34,6 +35,22 @@ class GmailTool(ExternalTool):
         # Default settings
         self.default_max_results = 10
         self.user_email = None
+        self.user_name = None  # For assistant signing
+        self.conversation_context = None  # For contextual emails
+
+    def set_context(self, context_resolver, user_message: str) -> None:
+        """Set conversation context for contextual email composition."""
+        self.conversation_context = {
+            "user_message": user_message,
+            "context_resolver": context_resolver
+        }
+
+    def set_user_info(self, user_name: str = None, user_email: str = None) -> None:
+        """Set user information for assistant signing."""
+        if user_name:
+            self.user_name = user_name
+        if user_email:
+            self.user_email = user_email
 
     async def is_authorized(self) -> bool:
         """Override to ensure tokens exist before use (refresh or access)."""
@@ -336,11 +353,19 @@ class GmailTool(ExternalTool):
                     "Missing subject"
                 )
 
+            # Enhance email with contextual composition
+            enhanced_body = self._enhance_email_body(
+                original_body=parsed_message_data.get("body", ""),
+                recipient=parsed_message_data["to"],
+                subject=parsed_message_data["subject"],
+                message_data=parsed_message_data
+            )
+
             # Build email message
             message = self._build_email_message(
                 to=parsed_message_data["to"],
                 subject=parsed_message_data["subject"],
-                body=parsed_message_data.get("body", ""),
+                body=enhanced_body,
                 cc=parsed_message_data.get("cc"),
                 bcc=parsed_message_data.get("bcc"),
                 attachments=parsed_message_data.get("attachments")
@@ -528,6 +553,285 @@ class GmailTool(ExternalTool):
         except Exception as e:
             logger.error(f"Error building email message: {str(e)}")
             raise ValueError(f"Failed to build email message: {str(e)}")
+
+    def _enhance_email_body(self, original_body: str, recipient: str, subject: str, message_data: Dict[str, Any]) -> str:
+        """Enhance email body with contextual composition and professional formatting."""
+        try:
+            # Extract recipient name from email
+            recipient_name = self._extract_recipient_name(recipient)
+
+            # Determine email type and context
+            email_type = self._classify_email_type(subject, original_body, message_data)
+
+            # Build contextual email using template
+            enhanced_body = self._build_contextual_email(
+                original_body=original_body,
+                recipient_name=recipient_name,
+                email_type=email_type,
+                message_data=message_data
+            )
+
+            return enhanced_body
+
+        except Exception as e:
+            logger.warning(f"Failed to enhance email body: {str(e)}")
+            # Fallback to original body with basic signature
+            return self._add_assistant_signature(original_body)
+
+    def _extract_recipient_name(self, recipient_email: str) -> str:
+        """Extract recipient name from email address."""
+        try:
+            # Try to extract name from email format "Name <email@domain.com>"
+            if '<' in recipient_email and '>' in recipient_email:
+                name_part = recipient_email.split('<')[0].strip()
+                if name_part:
+                    return name_part
+
+            # Extract from email address before @
+            local_part = recipient_email.split('@')[0]
+
+            # Convert common patterns to names
+            if '.' in local_part:
+                parts = local_part.split('.')
+                return ' '.join(part.capitalize() for part in parts)
+            elif '_' in local_part:
+                parts = local_part.split('_')
+                return ' '.join(part.capitalize() for part in parts)
+            else:
+                return local_part.capitalize()
+
+        except Exception as e:
+            logger.warning(f"Failed to extract recipient name: {str(e)}")
+            return "there"  # Fallback greeting
+
+    def _classify_email_type(self, subject: str, body: str, message_data: Dict[str, Any]) -> str:
+        """Classify the type of email being sent."""
+        subject_lower = subject.lower()
+        body_lower = body.lower()
+
+        # Calendar-related emails
+        if any(keyword in subject_lower for keyword in ["calendar", "meeting", "event", "invitation", "scheduled"]):
+            return "calendar_event"
+
+        # Follow-up emails
+        if any(keyword in subject_lower for keyword in ["follow-up", "followup", "action items", "next steps"]):
+            return "follow_up"
+
+        # Completion/summary emails
+        if any(keyword in subject_lower for keyword in ["completed", "summary", "report", "finished"]):
+            return "completion_summary"
+
+        # Task coordination emails
+        if any(keyword in subject_lower for keyword in ["action required", "coordination", "preparation"]):
+            return "task_coordination"
+
+        # Default professional email
+        return "professional"
+
+    def _build_contextual_email(self, original_body: str, recipient_name: str, email_type: str, message_data: Dict[str, Any]) -> str:
+        """Build contextual email using appropriate template."""
+        try:
+            # Get conversation context if available
+            context_info = self._get_conversation_context()
+
+            # Build email based on type
+            if email_type == "calendar_event":
+                return self._build_calendar_event_email(original_body, recipient_name, message_data, context_info)
+            elif email_type == "completion_summary":
+                return self._build_completion_summary_email(original_body, recipient_name, message_data, context_info)
+            elif email_type == "follow_up":
+                return self._build_follow_up_email(original_body, recipient_name, message_data, context_info)
+            elif email_type == "task_coordination":
+                return self._build_task_coordination_email(original_body, recipient_name, message_data, context_info)
+            else:
+                return self._build_professional_email(original_body, recipient_name, message_data, context_info)
+
+        except Exception as e:
+            logger.warning(f"Failed to build contextual email: {str(e)}")
+            return self._add_assistant_signature(original_body)
+
+    def _get_conversation_context(self) -> Dict[str, Any]:
+        """Get conversation context for email composition."""
+        context = {}
+
+        if self.conversation_context:
+            context["user_message"] = self.conversation_context.get("user_message", "")
+
+            # Try to get additional context from context resolver
+            if self.conversation_context.get("context_resolver"):
+                try:
+                    # This would need to be implemented based on the context resolver interface
+                    pass
+                except Exception as e:
+                    logger.debug(f"Could not get additional context: {str(e)}")
+
+        return context
+
+    def _build_calendar_event_email(self, original_body: str, recipient_name: str, message_data: Dict[str, Any], context: Dict[str, Any]) -> str:
+        """Build calendar event email using template."""
+        user_context = context.get("user_message", "")
+
+        # Extract event details from original body or message data
+        event_details = self._extract_event_details(original_body, message_data)
+
+        email_body = f"""Dear {recipient_name},
+
+I hope this email finds you well. As requested{self._get_context_reference(user_context)}, I've scheduled a calendar event for the meeting.
+
+Please find the event details below:
+{event_details}
+
+The calendar invitation has been sent to your email address. Please let me know if you need any changes to the timing or if you have any questions about the meeting.
+
+Looking forward to a productive discussion.
+
+Best regards,
+{self._get_assistant_signature()}
+
+{self._add_context_note(user_context)}"""
+
+        return email_body
+
+    def _build_completion_summary_email(self, original_body: str, recipient_name: str, message_data: Dict[str, Any], context: Dict[str, Any]) -> str:
+        """Build completion summary email using template."""
+        user_context = context.get("user_message", "")
+
+        email_body = f"""Dear {recipient_name},
+
+I hope this email finds you well. I'm pleased to inform you that the requested tasks have been completed successfully{self._get_context_reference(user_context)}.
+
+{original_body}
+
+All items have been processed and are now ready for your review. Please let me know if you need any adjustments or have additional requirements.
+
+Thank you for your patience, and I'm here to assist with any follow-up needs.
+
+Best regards,
+{self._get_assistant_signature()}
+
+{self._add_context_note(user_context)}"""
+
+        return email_body
+
+    def _build_follow_up_email(self, original_body: str, recipient_name: str, message_data: Dict[str, Any], context: Dict[str, Any]) -> str:
+        """Build follow-up email using template."""
+        user_context = context.get("user_message", "")
+
+        email_body = f"""Dear {recipient_name},
+
+I hope this email finds you well. Following up on our recent discussion{self._get_context_reference(user_context)}, I wanted to share the action items and next steps.
+
+{original_body}
+
+Please review the items above and let me know if you have any questions or need clarification on any points. I'm available to assist with any of these items as needed.
+
+Thank you for your time and collaboration.
+
+Best regards,
+{self._get_assistant_signature()}
+
+{self._add_context_note(user_context)}"""
+
+        return email_body
+
+    def _build_task_coordination_email(self, original_body: str, recipient_name: str, message_data: Dict[str, Any], context: Dict[str, Any]) -> str:
+        """Build task coordination email using template."""
+        user_context = context.get("user_message", "")
+
+        email_body = f"""Dear {recipient_name},
+
+I hope this email finds you well. As part of our ongoing coordination{self._get_context_reference(user_context)}, I need to share some important information and action items.
+
+{original_body}
+
+Please review the information above and take the necessary actions by the specified deadlines. If you have any questions or need additional resources, please don't hesitate to reach out.
+
+Thank you for your attention to these matters.
+
+Best regards,
+{self._get_assistant_signature()}
+
+{self._add_context_note(user_context)}"""
+
+        return email_body
+
+    def _build_professional_email(self, original_body: str, recipient_name: str, message_data: Dict[str, Any], context: Dict[str, Any]) -> str:
+        """Build professional email using template."""
+        user_context = context.get("user_message", "")
+
+        email_body = f"""Dear {recipient_name},
+
+I hope this email finds you well{self._get_context_reference(user_context)}.
+
+{original_body}
+
+Please let me know if you need any additional information or have any questions.
+
+Best regards,
+{self._get_assistant_signature()}
+
+{self._add_context_note(user_context)}"""
+
+        return email_body
+
+    def _extract_event_details(self, original_body: str, message_data: Dict[str, Any]) -> str:
+        """Extract and format event details from message content."""
+        try:
+            # Look for common event details in the original body
+            lines = original_body.split('\n')
+            event_details = []
+
+            for line in lines:
+                line = line.strip()
+                if any(keyword in line.lower() for keyword in ['event:', 'date:', 'time:', 'location:', 'duration:']):
+                    event_details.append(f"• {line}")
+
+            if event_details:
+                return '\n'.join(event_details)
+            else:
+                # Fallback to basic formatting
+                return f"• Event details: {original_body[:100]}..."
+
+        except Exception as e:
+            logger.warning(f"Failed to extract event details: {str(e)}")
+            return "• Event details are included in the calendar invitation"
+
+    def _get_context_reference(self, user_context: str) -> str:
+        """Get contextual reference to user's original request."""
+        if not user_context:
+            return ""
+
+        # Create a brief reference to the original context
+        if len(user_context) > 50:
+            context_snippet = user_context[:50] + "..."
+        else:
+            context_snippet = user_context
+
+        return f" regarding your request about {context_snippet}"
+
+    def _add_context_note(self, user_context: str) -> str:
+        """Add contextual note if relevant."""
+        if not user_context:
+            return ""
+
+        return f"\nNote: This action was completed as part of your request: \"{user_context[:100]}{'...' if len(user_context) > 100 else ''}\""
+
+    def _get_assistant_signature(self) -> str:
+        """Get the assistant signature."""
+        if self.user_name:
+            return f"{self.user_name}'s Assistant"
+        else:
+            return "Your Assistant"
+
+    def _add_assistant_signature(self, body: str) -> str:
+        """Add assistant signature to email body."""
+        signature = f"\n\nBest regards,\n{self._get_assistant_signature()}"
+
+        # Check if signature already exists
+        if "Best regards," in body or "Sincerely," in body or "Assistant" in body:
+            return body
+
+        return body + signature
 
     def _parse_event_data(self, message_data: Any) -> Dict[str, Any]:
         """

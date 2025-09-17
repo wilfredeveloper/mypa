@@ -255,7 +255,7 @@ class PersonalAssistant:
                 "config": self.config,
                 "tool_registry": self._tool_registry,
                 "baml_client": self._baml_client,
-                "context": context or {},
+                "context": session["context"],  # Use session context instead of original context parameter
                 "entity_store": session["entity_store"]
             }
 

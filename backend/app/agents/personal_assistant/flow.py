@@ -37,6 +37,7 @@ def create_personal_assistant_flow() -> AsyncFlow:
     think - "end" >> end         # If final answer ready
 
     # From tools node:
+    tools - "tools" >> tools      # For retries and continuing with plan steps
     tools - "respond" >> respond  # After tool execution, generate response
 
     # From respond node:

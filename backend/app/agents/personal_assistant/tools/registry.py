@@ -385,3 +385,15 @@ class ToolRegistryManager:
             "requires_oauth": tool_registry.requires_oauth(),
             "oauth_provider": tool_registry.oauth_provider
         }
+
+    def get_tool_instance(self, tool_name: str) -> Optional[BaseTool]:
+        """
+        Get a tool instance by name.
+
+        Args:
+            tool_name: Name of the tool to get
+
+        Returns:
+            Tool instance if found and available, None otherwise
+        """
+        return self._tool_instances.get(tool_name)
